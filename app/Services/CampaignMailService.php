@@ -1,0 +1,199 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\CampaignEmail;
+use App\Models\CampaignRecipient;
+use Illuminate\Support\Facades\Log;
+
+class CampaignMailService
+{
+    public function __construct(
+        private Office365MailService $mailService,
+        private PlaceholderService $placeholderService,
+    ) {}
+
+    /**
+     * Sende eine Kampagnen-E-Mail an einen Empfänger (beide Adressen).
+     */
+    public function sendToRecipient(CampaignRecipient $recipient, CampaignEmail $email): void
+    {
+        $recipient->loadMissing(['student', 'campaign']);
+
+        $subject = $this->placeholderService->replace($email->subject, $recipient);
+        $body = $this->placeholderService->replace($email->body, $recipient);
+
+        $htmlBody = $this->wrapInHtmlTemplate($body);
+
+        // Sende an primäre E-Mail-Adresse
+        $this->mailService->sendMail(
+            to: $recipient->student->email,
+            subject: $subject,
+            htmlBody: $htmlBody,
+        );
+
+        // Sende an zweite E-Mail-Adresse (falls vorhanden) mit ?via=2 im Link
+        if ($recipient->student->email_2) {
+            $bodyEmail2 = $this->placeholderService->replace($email->body, $recipient, viaEmail: 2);
+            $htmlBodyEmail2 = $this->wrapInHtmlTemplate($bodyEmail2);
+
+            $this->mailService->sendMail(
+                to: $recipient->student->email_2,
+                subject: $subject,
+                htmlBody: $htmlBodyEmail2,
+            );
+        }
+
+        Log::info('Kampagnen-Mail gesendet', [
+            'campaign_id' => $recipient->campaign_id,
+            'student_id' => $recipient->student_id,
+            'type' => $email->type,
+            'email_count' => $recipient->student->email_2 ? 2 : 1,
+        ]);
+    }
+
+    /**
+     * Sende Bestätigungs-E-Mail nach Antwort (an beide Adressen).
+     */
+    public function sendConfirmation(CampaignRecipient $recipient): void
+    {
+        $recipient->loadMissing(['student', 'campaign']);
+
+        $student = $recipient->student;
+        $campaign = $recipient->campaign;
+        $status = $recipient->status === 'accepted' ? 'Zugestimmt' : 'Nicht zugestimmt';
+        $statusColor = $recipient->status === 'accepted' ? '#16A34A' : '#DC2626';
+
+        $subject = "Bestätigung Ihrer Rückmeldung – {$campaign->name}";
+        $body = '<p>Guten Tag ' . e($student->name) . ',</p>'
+            . '<p>vielen Dank für Ihre Rückmeldung. Wir bestätigen hiermit den Eingang Ihrer Entscheidung zur Kampagne <strong>' . e($campaign->name) . '</strong>.</p>'
+            . '<table cellpadding="0" cellspacing="0" border="0" style="margin: 20px 0; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; width: 100%;">'
+            . '<tr><td style="background-color: #F8FAFC; padding: 16px 20px; border-bottom: 1px solid #E2E8F0;">'
+            . '<strong style="color: #2C4A6B;">Zusammenfassung</strong></td></tr>'
+            . '<tr><td style="padding: 16px 20px;">'
+            . '<table cellpadding="0" cellspacing="0" border="0" width="100%">'
+            . '<tr><td style="padding: 6px 0; color: #64748B;">Status</td>'
+            . '<td style="padding: 6px 0; text-align: right;"><strong style="color: ' . $statusColor . ';">' . $status . '</strong></td></tr>'
+            . '<tr><td style="padding: 6px 0; color: #64748B;">Eingereicht am</td>'
+            . '<td style="padding: 6px 0; text-align: right; color: #2C4A6B;">' . $recipient->responded_at->format('d.m.Y, H:i') . ' Uhr</td></tr>'
+            . '<tr><td style="padding: 6px 0; color: #64748B;">Kassenzeichen</td>'
+            . '<td style="padding: 6px 0; text-align: right; color: #2C4A6B;">' . e($student->customer_number) . '</td></tr>'
+            . '</table></td></tr></table>'
+            . '<p style="color: #64748B; font-size: 13px;">Diese E-Mail dient als Nachweis Ihrer Rückmeldung. Bitte bewahren Sie diese E-Mail zu Ihren Unterlagen auf.</p>';
+
+        $htmlBody = $this->wrapInHtmlTemplate($body);
+
+        $this->mailService->sendMail(
+            to: $student->email,
+            subject: $subject,
+            htmlBody: $htmlBody,
+        );
+
+        if ($student->email_2) {
+            $this->mailService->sendMail(
+                to: $student->email_2,
+                subject: $subject,
+                htmlBody: $htmlBody,
+            );
+        }
+    }
+
+    private function wrapInHtmlTemplate(string $body): string
+    {
+        $logoUrl = asset('images/logo.jpg');
+        $year = date('Y');
+
+        return <<<HTML
+<!DOCTYPE html>
+<html lang="de" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Musikschule Frankfurt</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #F1F5F9; font-family: 'Century Gothic', 'CenturyGothic', Arial, Helvetica, sans-serif; -webkit-font-smoothing: antialiased;">
+    <!-- Outer container -->
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #F1F5F9;">
+        <tr>
+            <td align="center" style="padding: 30px 15px;">
+                <!-- Inner container -->
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width: 600px; width: 100%;">
+
+                    <!-- Header with Logo -->
+                    <tr>
+                        <td align="center" style="padding: 0 0 24px 0;">
+                            <div style="background-color: #FFFFFF; border-radius: 12px; display: inline-block; padding: 16px 24px;">
+                                <img src="{$logoUrl}" alt="Musikschule Frankfurt" width="220" style="display: block; max-width: 220px; height: auto;">
+                            </div>
+                        </td>
+                    </tr>
+
+                    <!-- Main Content Card -->
+                    <tr>
+                        <td style="background-color: #FFFFFF; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
+                            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                                <!-- Blue accent bar -->
+                                <tr>
+                                    <td style="background-color: #3D8BC9; height: 4px; border-radius: 12px 12px 0 0; font-size: 0; line-height: 0;">&nbsp;</td>
+                                </tr>
+                                <!-- Body content -->
+                                <tr>
+                                    <td style="padding: 36px 40px; color: #2C4A6B; font-size: 15px; line-height: 1.7; font-family: 'Century Gothic', 'CenturyGothic', Arial, Helvetica, sans-serif;">
+                                        {$body}
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style="padding: 28px 20px 0 20px;">
+                            <!-- Absender -->
+                            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                                <tr>
+                                    <td align="center" style="font-size: 13px; color: #64748B; line-height: 1.6; font-family: 'Century Gothic', 'CenturyGothic', Arial, Helvetica, sans-serif;">
+                                        <strong>Musikschule Frankfurt e.&thinsp;V.</strong><br>
+                                        Berliner Straße 51, 60311 Frankfurt
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="height: 20px; font-size: 0; line-height: 0;">&nbsp;</td>
+                                </tr>
+                                <tr>
+                                    <td align="center" style="padding-top: 16px; border-top: 1px solid #E2E8F0;">
+                                        <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                                            <tr>
+                                                <td style="padding: 12px 0;">
+                                                    <a href="https://www.musikschule-frankfurt.de/impressum" style="color: #3D8BC9; text-decoration: none; font-size: 12px;">Impressum</a>
+                                                    <span style="color: #CBD5E1; padding: 0 8px;">|</span>
+                                                    <a href="https://www.musikschule-frankfurt.de/datenschutz" style="color: #3D8BC9; text-decoration: none; font-size: 12px;">Datenschutz</a>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td align="center" style="padding: 4px 0 8px 0; font-size: 11px; color: #94A3B8;">
+                                        Vereinsregister: AG Frankfurt am Main · VR 5258 · Vorsitzende: Sylvia Weber
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td align="center" style="padding: 0 0 8px 0; font-size: 11px; color: #94A3B8;">
+                                        &copy; {$year} Musikschule Frankfurt e.&thinsp;V. · Alle Rechte vorbehalten
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+HTML;
+    }
+}
