@@ -16,15 +16,15 @@ class StudentResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-academic-cap';
 
-    protected static ?string $navigationLabel = 'Schüler';
+    protected static ?string $navigationLabel = 'Empfänger';
 
-    protected static ?string $navigationGroup = 'Verwaltung';
+    protected static ?string $navigationGroup = 'Kampagnen';
 
-    protected static ?string $modelLabel = 'Schüler';
+    protected static ?string $modelLabel = 'Empfänger';
 
-    protected static ?string $pluralModelLabel = 'Schüler';
+    protected static ?string $pluralModelLabel = 'Empfänger';
 
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 2;
 
     public static function form(Form $form): Form
     {

@@ -19,7 +19,7 @@ class CampaignSeeder extends Seeder
 
         // Hauptkampagne: Vertragsänderung 2026 – als Entwurf (bereit zum Starten)
         $campaign = Campaign::create([
-            'name' => 'Vertragsänderung – Rückmeldung erforderlich',
+            'name' => 'Vertragsänderung ab 1.8.2026 – Rückmeldung erforderlich',
             'subtitle' => 'Vertragsänderungen ab 1.8.2026',
             'description' => '<p><strong>Neue AGB – Schulgeldtarife – Bedingungen für Tarifermäßigungen</strong></p>'
                 . '<p><strong>Aktive Zustimmung des Zahlungspflichtigen erforderlich</strong></p>'

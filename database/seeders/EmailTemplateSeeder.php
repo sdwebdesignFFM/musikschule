@@ -14,7 +14,7 @@ class EmailTemplateSeeder extends Seeder
         EmailTemplate::create([
             'name' => 'Vertragsänderung Erst-Mail',
             'type' => 'initial',
-            'subject' => 'Vertragsänderung – Rückmeldung erforderlich',
+            'subject' => 'Vertragsänderung – Rückmeldung erforderlich bis {{frist}}',
             'body' => '<p>{{anrede}} {{name}},</p>'
                 . '<p>zum 1.8.2026 ändern sich die AGB, Schulgeldtarife und Bedingungen für Tarifermäßigungen der Musikschule Frankfurt e.&nbsp;V.</p>'
                 . '<p>Um Ihnen weiterhin qualitativ hochwertigen Musikschulunterricht durch qualifizierte Lehrkräfte anbieten zu können, passen wir unsere Schulgeldtarife zum 1.8.2026 an.</p>'
@@ -27,7 +27,7 @@ class EmailTemplateSeeder extends Seeder
         EmailTemplate::create([
             'name' => 'Vertragsänderung Erinnerung',
             'type' => 'reminder_1',
-            'subject' => 'Erinnerung Vertragsänderung Rückmeldung erforderlich',
+            'subject' => 'Erinnerung: Vertragsänderung – Rückmeldung erforderlich bis {{frist}}',
             'body' => '<p>{{anrede}} {{name}},</p>'
                 . '<p>wir möchten Sie daran erinnern, dass sich zum <strong>1. August 2026</strong> die <strong>AGB</strong>, die <strong>Schulgeldtarife</strong> sowie die <strong>Bedingungen für Tarifermäßigungen</strong> der Musikschule Frankfurt e.&nbsp;V. ändern.</p>'
                 . '<p>Damit Sie und Ihr Kind/Ihre Kinder weiterhin Unterricht erhalten können, benötigen wir dringend <strong>Ihre aktive Zustimmung</strong>. Liegt uns Ihre Zustimmung bis <strong>{{frist}}</strong> nicht vor, sind wir verpflichtet, den Unterrichtsvertrag zum <strong>31.7.2026</strong> zu beenden.</p>'
@@ -43,7 +43,7 @@ class EmailTemplateSeeder extends Seeder
         EmailTemplate::create([
             'name' => 'Vertragsänderung letzte Erinnerung',
             'type' => 'reminder_2',
-            'subject' => 'Letzte Erinnerung: Vertragsänderung – Rückmeldung erforderlich',
+            'subject' => 'Letzte Erinnerung: Vertragsänderung – Rückmeldung erforderlich bis {{frist}}',
             'body' => '<p>{{anrede}} {{name}},</p>'
                 . '<p>dies ist unsere <strong>letzte Erinnerung</strong>: Ihre Rückmeldung zur Vertragsänderung steht noch aus.</p>'
                 . '<p>Die Frist endet am <strong>{{frist}}</strong>. Ohne Ihre Zustimmung sind wir verpflichtet, den Unterrichtsvertrag zum <strong>31.7.2026</strong> zu beenden.</p>'

@@ -66,7 +66,7 @@ class CampaignMailService
 
         $subject = "Bestätigung Ihrer Rückmeldung – {$campaign->name}";
         $body = '<p>Guten Tag ' . e($student->name) . ',</p>'
-            . '<p>vielen Dank für Ihre Rückmeldung. Wir bestätigen hiermit den Eingang Ihrer Entscheidung zur Kampagne <strong>' . e($campaign->name) . '</strong>.</p>'
+            . '<p>vielen Dank für Ihre Rückmeldung. Wir bestätigen hiermit den Eingang Ihrer Entscheidung zur Vertragsänderung.</p>'
             . '<table cellpadding="0" cellspacing="0" border="0" style="margin: 20px 0; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; width: 100%;">'
             . '<tr><td style="background-color: #F8FAFC; padding: 16px 20px; border-bottom: 1px solid #E2E8F0;">'
             . '<strong style="color: #2C4A6B;">Zusammenfassung</strong></td></tr>'
@@ -79,7 +79,8 @@ class CampaignMailService
             . '<tr><td style="padding: 6px 0; color: #64748B;">Kassenzeichen</td>'
             . '<td style="padding: 6px 0; text-align: right; color: #2C4A6B;">' . e($student->customer_number) . '</td></tr>'
             . '</table></td></tr></table>'
-            . '<p style="color: #64748B; font-size: 13px;">Diese E-Mail dient als Nachweis Ihrer Rückmeldung. Bitte bewahren Sie diese E-Mail zu Ihren Unterlagen auf.</p>';
+            . '<p style="color: #64748B; font-size: 13px;">Diese E-Mail dient als Nachweis Ihrer Rückmeldung.</p>'
+            . '<p>Mit freundlichen Grüßen<br><strong>Musikschule Frankfurt e.&nbsp;V.</strong></p>';
 
         $htmlBody = $this->wrapInHtmlTemplate($body);
 
@@ -100,7 +101,7 @@ class CampaignMailService
 
     private function wrapInHtmlTemplate(string $body): string
     {
-        $logoUrl = asset('images/logo.jpg');
+        $logoUrl = config('msgraph.email_base_url', config('app.url')) . '/images/logo.jpg';
         $year = date('Y');
 
         return <<<HTML
@@ -113,14 +114,10 @@ class CampaignMailService
     <title>Musikschule Frankfurt</title>
 </head>
 <body style="margin: 0; padding: 0; background-color: #F1F5F9; font-family: 'Century Gothic', 'CenturyGothic', Arial, Helvetica, sans-serif; -webkit-font-smoothing: antialiased;">
-    <!-- Outer container -->
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #F1F5F9;">
         <tr>
             <td align="center" style="padding: 30px 15px;">
-                <!-- Inner container -->
                 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width: 600px; width: 100%;">
-
-                    <!-- Header with Logo -->
                     <tr>
                         <td align="center" style="padding: 0 0 24px 0;">
                             <div style="background-color: #FFFFFF; border-radius: 12px; display: inline-block; padding: 16px 24px;">
@@ -129,15 +126,12 @@ class CampaignMailService
                         </td>
                     </tr>
 
-                    <!-- Main Content Card -->
                     <tr>
                         <td style="background-color: #FFFFFF; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
                             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-                                <!-- Blue accent bar -->
                                 <tr>
                                     <td style="background-color: #3D8BC9; height: 4px; border-radius: 12px 12px 0 0; font-size: 0; line-height: 0;">&nbsp;</td>
                                 </tr>
-                                <!-- Body content -->
                                 <tr>
                                     <td style="padding: 36px 40px; color: #2C4A6B; font-size: 15px; line-height: 1.7; font-family: 'Century Gothic', 'CenturyGothic', Arial, Helvetica, sans-serif;">
                                         {$body}
@@ -147,10 +141,8 @@ class CampaignMailService
                         </td>
                     </tr>
 
-                    <!-- Footer -->
                     <tr>
                         <td style="padding: 28px 20px 0 20px;">
-                            <!-- Absender -->
                             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                                 <tr>
                                     <td align="center" style="font-size: 13px; color: #64748B; line-height: 1.6; font-family: 'Century Gothic', 'CenturyGothic', Arial, Helvetica, sans-serif;">

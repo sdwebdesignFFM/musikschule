@@ -1,6 +1,6 @@
 @extends('layouts.landing')
 
-@section('title', $recipient->campaign->name . ' – Musikschule Frankfurt')
+@section('title', $campaignName . ' – Musikschule Frankfurt')
 
 @section('content')
 @if(!empty($isPreview))
@@ -13,22 +13,26 @@
     {{-- Hero Section --}}
     <div class="text-center space-y-3 mb-7">
         <h1 class="text-[26px] font-bold text-navy leading-tight">
-            {{ $recipient->campaign->name }}
+            {{ $campaignName }}
         </h1>
 
-        @if($recipient->campaign->subtitle)
-            <p class="text-muted text-[13px] leading-relaxed">
-                {{ $recipient->campaign->subtitle }}
+        @if($campaignSubtitle)
+            <p class="text-navy text-lg font-semibold">
+                {{ $campaignSubtitle }}
             </p>
         @endif
+    </div>
 
-        <p class="text-navy text-lg font-semibold">
+    <div class="h-px bg-border mb-7"></div>
+
+    <div class="text-center mb-7">
+        <p class="text-navy text-lg font-semibold mb-4">
             Guten Tag {{ $recipient->student->name }},
         </p>
 
         @if($recipient->campaign->description)
             <div class="prose-modal text-subtle text-sm leading-[1.8] max-w-[600px] mx-auto">
-                {!! $recipient->campaign->description !!}
+                {!! $campaignDescription !!}
             </div>
         @endif
     </div>

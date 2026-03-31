@@ -13,8 +13,8 @@ class Office365MailService
 
     public function sendMail(string $to, string $subject, string $htmlBody): void
     {
-        // Lokal: über Laravel Mail (Mailpit) senden
-        if (app()->environment('local', 'testing')) {
+        // Lokal: über Laravel Mail (Mailpit) senden, außer Graph API ist erzwungen
+        if (app()->environment('local', 'testing') && !config('msgraph.force_live')) {
             $this->sendViaLaravelMail($to, $subject, $htmlBody);
             return;
         }
@@ -40,11 +40,23 @@ class Office365MailService
                             'contentType' => 'HTML',
                             'content' => $htmlBody,
                         ],
+                        'from' => [
+                            'emailAddress' => [
+                                'name' => config('app.name', 'Musikschule Frankfurt'),
+                                'address' => $sender,
+                            ],
+                        ],
                         'toRecipients' => [
                             [
                                 'emailAddress' => [
                                     'address' => $to,
                                 ],
+                            ],
+                        ],
+                        'internetMessageHeaders' => [
+                            [
+                                'name' => 'X-Mailer',
+                                'value' => 'Musikschule Frankfurt Kampagnen',
                             ],
                         ],
                     ],

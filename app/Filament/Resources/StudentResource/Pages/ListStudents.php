@@ -14,7 +14,7 @@ class ListStudents extends ListRecords
     {
         return [
             Actions\CreateAction::make()
-                ->label('Schüler anlegen'),
+                ->label('Empfänger anlegen'),
         ];
     }
 }

@@ -6,7 +6,6 @@ use App\Filament\Resources\CampaignResource\Pages;
 use App\Jobs\SendCampaignEmail;
 use App\Models\Campaign;
 use App\Models\CampaignRecipient;
-use App\Models\EmailTemplate;
 use App\Models\Student;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -61,7 +60,7 @@ class CampaignResource extends Resource
                                     ->required()
                                     ->displayFormat('d.m.Y'),
                                 Forms\Components\DatePicker::make('deadline')
-                                    ->label('Deadline')
+                                    ->label('Rückmeldefrist bis')
                                     ->required()
                                     ->displayFormat('d.m.Y')
                                     ->afterOrEqual('start_date'),
@@ -171,21 +170,6 @@ class CampaignResource extends Resource
         return Forms\Components\Section::make($title)
             ->description($description)
             ->schema([
-                Forms\Components\Select::make("email_{$type}_template_id")
-                    ->label('Vorlage laden')
-                    ->options(EmailTemplate::where('type', $type)->pluck('name', 'id'))
-                    ->placeholder('Vorlage auswählen...')
-                    ->reactive()
-                    ->afterStateUpdated(function ($state, Forms\Set $set) use ($type) {
-                        if ($state) {
-                            $template = EmailTemplate::find($state);
-                            if ($template) {
-                                $set("email_{$type}_subject", $template->subject);
-                                $set("email_{$type}_body", $template->body);
-                            }
-                        }
-                    })
-                    ->dehydrated(false),
                 ...($type !== 'initial' ? [
                     Forms\Components\TextInput::make("email_{$type}_delay_days")
                         ->label('Tage nach Erst-Mail')
@@ -254,7 +238,7 @@ class CampaignResource extends Resource
                         return round(($responded / $total) * 100) . '%';
                     }),
                 Tables\Columns\TextColumn::make('deadline')
-                    ->label('Deadline')
+                    ->label('Rückmeldefrist bis')
                     ->date('d.m.Y')
                     ->sortable(),
                 Tables\Columns\TextColumn::make('start_date')
@@ -325,7 +309,7 @@ class CampaignResource extends Resource
                         $newCampaign->save();
 
                         foreach ($record->emails as $email) {
-                            $newCampaign->emails()->create($email->only(['type', 'subject', 'body', 'delay_days', 'template_id']));
+                            $newCampaign->emails()->create($email->only(['type', 'subject', 'body', 'delay_days']));
                         }
 
                         foreach ($record->documents as $doc) {

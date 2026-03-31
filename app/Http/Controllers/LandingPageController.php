@@ -38,6 +38,7 @@ class LandingPageController extends Controller
             'recipient' => $recipient,
             'isPreview' => true,
             'displayEmail' => $existingRecipient ? $existingRecipient->student->email : ($student->email ?? 'max@beispiel.de'),
+            ...$this->campaignPlaceholders($campaign),
         ]);
     }
 
@@ -61,7 +62,11 @@ class LandingPageController extends Controller
 
         session(['responded_via_email_' . $token => $displayEmail]);
 
-        return view('landing.show', compact('recipient', 'displayEmail'));
+        return view('landing.show', [
+            'recipient' => $recipient,
+            'displayEmail' => $displayEmail,
+            ...$this->campaignPlaceholders($recipient->campaign),
+        ]);
     }
 
     public function respond(Request $request, string $token)
@@ -90,5 +95,21 @@ class LandingPageController extends Controller
         SendConfirmationEmail::dispatch($recipient);
 
         return view('landing.responded', compact('recipient'));
+    }
+
+    private function campaignPlaceholders(Campaign $campaign): array
+    {
+        $deadline = $campaign->deadline?->format('d.m.Y') ?? '';
+        $replace = fn (?string $text) => str_replace(
+            ['{{frist}}', '{{deadline}}'],
+            $deadline,
+            $text ?? '',
+        );
+
+        return [
+            'campaignName' => $replace($campaign->name),
+            'campaignSubtitle' => $replace($campaign->subtitle),
+            'campaignDescription' => $replace($campaign->description),
+        ];
     }
 }

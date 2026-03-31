@@ -13,7 +13,12 @@ class PlaceholderService
 
         $frist = $campaign->deadline->format('d.m.Y');
 
-        $link = route('landing.show', $recipient->token);
+        $baseUrl = config('msgraph.email_base_url');
+        if ($baseUrl) {
+            $link = rtrim($baseUrl, '/') . '/k/' . $recipient->token;
+        } else {
+            $link = route('landing.show', $recipient->token);
+        }
         if ($viaEmail) {
             $link .= '?via=' . $viaEmail;
         }
