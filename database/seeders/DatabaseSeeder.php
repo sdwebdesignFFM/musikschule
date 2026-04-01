@@ -11,13 +11,13 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         // Admin-User für Filament
-        User::factory()->create([
+        User::create([
             'name' => 'Admin',
             'email' => 'admin@musikschule.de',
             'password' => bcrypt('password'),
         ]);
 
-        User::factory()->create([
+        User::create([
             'name' => 'Steffen Fasselt',
             'email' => 'sfasselt@pauly-it.com',
             'password' => bcrypt('Demopass1111'),
