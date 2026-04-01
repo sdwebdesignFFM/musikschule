@@ -216,12 +216,14 @@ class CampaignResource extends Resource
                     ->formatStateUsing(fn (string $state): string => match ($state) {
                         'draft' => 'Entwurf',
                         'active' => 'Aktiv',
+                        'paused' => 'Pausiert',
                         'completed' => 'Abgeschlossen',
                         default => $state,
                     })
                     ->color(fn (string $state): string => match ($state) {
                         'draft' => 'gray',
                         'active' => 'success',
+                        'paused' => 'warning',
                         'completed' => 'primary',
                         default => 'gray',
                     }),
@@ -254,6 +256,7 @@ class CampaignResource extends Resource
                     ->options([
                         'draft' => 'Entwurf',
                         'active' => 'Aktiv',
+                        'paused' => 'Pausiert',
                         'completed' => 'Abgeschlossen',
                     ]),
             ])
@@ -291,9 +294,106 @@ class CampaignResource extends Resource
                         \Filament\Notifications\Notification::make()
                             ->success()
                             ->title('Kampagne gestartet')
-                            ->body("Die Kampagne wurde aktiviert. {$record->recipients()->count()} E-Mail(s) werden versendet.")
+                            ->body("Die Kampagne wurde aktiviert. {$recipients->count()} E-Mail(s) werden versendet.")
                             ->send();
                     }),
+                Tables\Actions\Action::make('pause')
+                    ->label('Pausieren')
+                    ->icon('heroicon-o-pause')
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->modalHeading('Kampagne pausieren')
+                    ->modalDescription('Der Versand wird gestoppt. Jobs in der Queue werden beim nächsten Versuch übersprungen.')
+                    ->modalSubmitActionLabel('Ja, pausieren')
+                    ->visible(fn (Campaign $record): bool => $record->isActive())
+                    ->action(function (Campaign $record): void {
+                        $record->update(['status' => 'paused']);
+
+                        \Filament\Notifications\Notification::make()
+                            ->warning()
+                            ->title('Kampagne pausiert')
+                            ->body('Der Versand wurde gestoppt.')
+                            ->send();
+                    }),
+                Tables\Actions\Action::make('resume')
+                    ->label('Fortsetzen')
+                    ->icon('heroicon-o-play')
+                    ->color('success')
+                    ->requiresConfirmation()
+                    ->modalHeading('Kampagne fortsetzen')
+                    ->modalDescription('Ausstehende und fehlgeschlagene Empfänger werden erneut versendet.')
+                    ->modalSubmitActionLabel('Ja, fortsetzen')
+                    ->visible(fn (Campaign $record): bool => $record->isPaused())
+                    ->action(function (Campaign $record): void {
+                        $record->update(['status' => 'active']);
+
+                        $initialEmail = $record->emails()->where('type', 'initial')->first();
+                        if ($initialEmail) {
+                            $recipients = $record->recipients()
+                                ->whereIn('email_status', ['pending', 'failed'])
+                                ->where('status', 'pending')
+                                ->get();
+
+                            foreach ($recipients as $index => $recipient) {
+                                // Sent-Flags zurücksetzen bei fehlgeschlagenen, damit Retry funktioniert
+                                if ($recipient->email_status === 'failed') {
+                                    $recipient->update([
+                                        'email_status' => 'pending',
+                                        'email_1_sent' => false,
+                                        'email_2_sent' => false,
+                                    ]);
+                                }
+                                SendCampaignEmail::dispatch($recipient, $initialEmail)
+                                    ->delay(now()->addSeconds($index * 2));
+                            }
+
+                            \Filament\Notifications\Notification::make()
+                                ->success()
+                                ->title('Kampagne fortgesetzt')
+                                ->body("{$recipients->count()} E-Mail(s) werden versendet.")
+                                ->send();
+                        }
+                    }),
+                Tables\Actions\Action::make('retryFailed')
+                    ->label('Fehler erneut senden')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalHeading('Fehlgeschlagene E-Mails erneut senden')
+                    ->modalDescription('Nur fehlgeschlagene Empfänger werden erneut versendet.')
+                    ->modalSubmitActionLabel('Ja, erneut senden')
+                    ->visible(fn (Campaign $record): bool => $record->isActive() && $record->recipients()->where('email_status', 'failed')->exists())
+                    ->action(function (Campaign $record): void {
+                        $initialEmail = $record->emails()->where('type', 'initial')->first();
+                        if (! $initialEmail) return;
+
+                        $failedRecipients = $record->recipients()
+                            ->where('email_status', 'failed')
+                            ->where('status', 'pending')
+                            ->get();
+
+                        foreach ($failedRecipients as $index => $recipient) {
+                            $recipient->update([
+                                'email_status' => 'pending',
+                                'email_1_sent' => false,
+                                'email_2_sent' => false,
+                            ]);
+                            SendCampaignEmail::dispatch($recipient, $initialEmail)
+                                ->delay(now()->addSeconds($index * 2));
+                        }
+
+                        \Filament\Notifications\Notification::make()
+                            ->success()
+                            ->title('Erneuter Versand gestartet')
+                            ->body("{$failedRecipients->count()} fehlgeschlagene E-Mail(s) werden erneut versendet.")
+                            ->send();
+                    }),
+                Tables\Actions\Action::make('statistics')
+                    ->label('Statistik')
+                    ->icon('heroicon-o-chart-bar')
+                    ->color('gray')
+                    ->url(fn (Campaign $record) => static::getUrl('statistics', ['record' => $record]))
+                    ->visible(fn (Campaign $record): bool => ! $record->isDraft()),
                 Tables\Actions\Action::make('duplicate')
                     ->label('Duplizieren')
                     ->icon('heroicon-o-document-duplicate')
@@ -359,6 +459,7 @@ class CampaignResource extends Resource
             'index' => Pages\ListCampaigns::route('/'),
             'create' => Pages\CreateCampaign::route('/create'),
             'edit' => Pages\EditCampaign::route('/{record}/edit'),
+            'statistics' => Pages\ViewCampaignStatistics::route('/{record}/statistics'),
         ];
     }
 }

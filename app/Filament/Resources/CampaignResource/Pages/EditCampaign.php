@@ -128,6 +128,12 @@ class EditCampaign extends EditRecord
                 ->color('gray')
                 ->url(fn () => route('landing.preview', $this->record))
                 ->openUrlInNewTab(),
+            Actions\Action::make('statistics')
+                ->label('Statistik')
+                ->icon('heroicon-o-chart-bar')
+                ->color('gray')
+                ->url(fn () => $this->getResource()::getUrl('statistics', ['record' => $this->record]))
+                ->visible(fn (): bool => ! $this->record->isDraft()),
             Actions\Action::make('start')
                 ->label('Kampagne starten')
                 ->icon('heroicon-o-play')
@@ -156,6 +162,61 @@ class EditCampaign extends EditRecord
                         ->send();
 
                     $this->redirect($this->getResource()::getUrl('index'));
+                }),
+            Actions\Action::make('pause')
+                ->label('Pausieren')
+                ->icon('heroicon-o-pause')
+                ->color('warning')
+                ->requiresConfirmation()
+                ->modalHeading('Kampagne pausieren')
+                ->modalDescription('Der Versand wird gestoppt.')
+                ->modalSubmitActionLabel('Ja, pausieren')
+                ->visible(fn (): bool => $this->record->isActive())
+                ->action(function (): void {
+                    $this->record->update(['status' => 'paused']);
+
+                    \Filament\Notifications\Notification::make()
+                        ->warning()
+                        ->title('Kampagne pausiert')
+                        ->send();
+                }),
+            Actions\Action::make('resume')
+                ->label('Fortsetzen')
+                ->icon('heroicon-o-play')
+                ->color('success')
+                ->requiresConfirmation()
+                ->modalHeading('Kampagne fortsetzen')
+                ->modalDescription('Ausstehende und fehlgeschlagene Empfänger werden erneut versendet.')
+                ->modalSubmitActionLabel('Ja, fortsetzen')
+                ->visible(fn (): bool => $this->record->isPaused())
+                ->action(function (): void {
+                    $this->record->update(['status' => 'active']);
+
+                    $initialEmail = $this->record->emails()->where('type', 'initial')->first();
+                    if ($initialEmail) {
+                        $recipients = $this->record->recipients()
+                            ->whereIn('email_status', ['pending', 'failed'])
+                            ->where('status', 'pending')
+                            ->get();
+
+                        foreach ($recipients as $index => $recipient) {
+                            if ($recipient->email_status === 'failed') {
+                                $recipient->update([
+                                    'email_status' => 'pending',
+                                    'email_1_sent' => false,
+                                    'email_2_sent' => false,
+                                ]);
+                            }
+                            SendCampaignEmail::dispatch($recipient, $initialEmail)
+                                ->delay(now()->addSeconds($index * 2));
+                        }
+
+                        \Filament\Notifications\Notification::make()
+                            ->success()
+                            ->title('Kampagne fortgesetzt')
+                            ->body("{$recipients->count()} E-Mail(s) werden versendet.")
+                            ->send();
+                    }
                 }),
             Actions\DeleteAction::make()
                 ->visible(fn (): bool => $this->record->isDraft()),

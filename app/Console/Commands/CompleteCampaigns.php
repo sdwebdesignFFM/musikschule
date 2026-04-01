@@ -12,7 +12,8 @@ class CompleteCampaigns extends Command
 
     public function handle(): int
     {
-        $completed = Campaign::where('status', 'active')
+        // Auch pausierte Kampagnen nach Deadline abschließen
+        $completed = Campaign::whereIn('status', ['active', 'paused'])
             ->where('deadline', '<', now()->startOfDay())
             ->get();
 

@@ -15,41 +15,56 @@ class CampaignMailService
 
     /**
      * Sende eine Kampagnen-E-Mail an einen Empfänger (beide Adressen).
+     * Duplikat-Schutz: Prüft email_1_sent / email_2_sent Flags pro Adresse.
      */
     public function sendToRecipient(CampaignRecipient $recipient, CampaignEmail $email): void
     {
         $recipient->loadMissing(['student', 'campaign']);
 
         $subject = $this->placeholderService->replace($email->subject, $recipient);
-        $body = $this->placeholderService->replace($email->body, $recipient);
+        $sentAny = false;
 
-        $htmlBody = $this->wrapInHtmlTemplate($body);
+        // Sende an primäre E-Mail-Adresse (nur wenn noch nicht gesendet)
+        if (! $recipient->email_1_sent) {
+            $body = $this->placeholderService->replace($email->body, $recipient);
+            $htmlBody = $this->wrapInHtmlTemplate($body);
+            $htmlBody = $this->injectTracking($htmlBody, $recipient->tracking_id);
 
-        // Sende an primäre E-Mail-Adresse
-        $this->mailService->sendMail(
-            to: $recipient->student->email,
-            subject: $subject,
-            htmlBody: $htmlBody,
-        );
+            $this->mailService->sendMail(
+                to: $recipient->student->email,
+                subject: $subject,
+                htmlBody: $htmlBody,
+            );
 
-        // Sende an zweite E-Mail-Adresse (falls vorhanden) mit ?via=2 im Link
-        if ($recipient->student->email_2) {
+            $recipient->update(['email_1_sent' => true]);
+            $sentAny = true;
+        }
+
+        // Sende an zweite E-Mail-Adresse (nur wenn vorhanden und noch nicht gesendet)
+        if ($recipient->student->email_2 && ! $recipient->email_2_sent) {
             $bodyEmail2 = $this->placeholderService->replace($email->body, $recipient, viaEmail: 2);
             $htmlBodyEmail2 = $this->wrapInHtmlTemplate($bodyEmail2);
+            $htmlBodyEmail2 = $this->injectTracking($htmlBodyEmail2, $recipient->tracking_id);
 
             $this->mailService->sendMail(
                 to: $recipient->student->email_2,
                 subject: $subject,
                 htmlBody: $htmlBodyEmail2,
             );
+
+            $recipient->update(['email_2_sent' => true]);
+            $sentAny = true;
         }
 
-        Log::info('Kampagnen-Mail gesendet', [
-            'campaign_id' => $recipient->campaign_id,
-            'student_id' => $recipient->student_id,
-            'type' => $email->type,
-            'email_count' => $recipient->student->email_2 ? 2 : 1,
-        ]);
+        if ($sentAny) {
+            Log::info('Kampagnen-Mail gesendet', [
+                'campaign_id' => $recipient->campaign_id,
+                'student_id' => $recipient->student_id,
+                'type' => $email->type,
+                'email_1_sent' => $recipient->email_1_sent,
+                'email_2_sent' => $recipient->email_2_sent,
+            ]);
+        }
     }
 
     /**
@@ -97,6 +112,18 @@ class CampaignMailService
                 htmlBody: $htmlBody,
             );
         }
+    }
+
+    /**
+     * Open-Tracking-Pixel vor </body> einfügen.
+     */
+    private function injectTracking(string $html, string $trackingId): string
+    {
+        $baseUrl = config('msgraph.email_base_url', config('app.url'));
+        $pixelUrl = rtrim($baseUrl, '/') . '/t/open/' . $trackingId;
+        $pixel = '<img src="' . $pixelUrl . '" width="1" height="1" alt="" style="display:none;border:0;" />';
+
+        return str_replace('</body>', $pixel . '</body>', $html);
     }
 
     private function wrapInHtmlTemplate(string $body): string

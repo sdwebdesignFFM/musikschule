@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
 
 class CampaignRecipient extends Model
 {
@@ -13,6 +14,14 @@ class CampaignRecipient extends Model
         'student_id',
         'token',
         'status',
+        'email_status',
+        'email_error',
+        'send_attempts',
+        'tracking_id',
+        'email_opened_at',
+        'email_clicked_at',
+        'email_1_sent',
+        'email_2_sent',
         'responded_at',
         'ip_address',
         'responded_via_email',
@@ -28,6 +37,10 @@ class CampaignRecipient extends Model
             'initial_sent_at' => 'datetime',
             'reminder_1_sent_at' => 'datetime',
             'reminder_2_sent_at' => 'datetime',
+            'email_opened_at' => 'datetime',
+            'email_clicked_at' => 'datetime',
+            'email_1_sent' => 'boolean',
+            'email_2_sent' => 'boolean',
         ];
     }
 
@@ -37,7 +50,50 @@ class CampaignRecipient extends Model
             if (empty($recipient->token)) {
                 $recipient->token = Str::random(64);
             }
+            if (empty($recipient->tracking_id)) {
+                $recipient->tracking_id = Str::uuid()->toString();
+            }
         });
+    }
+
+    /**
+     * Atomares Locking: Setzt email_status auf 'sending', nur wenn nicht bereits 'sending'.
+     * Gibt true zurück wenn Lock erworben, false wenn bereits locked.
+     */
+    public function acquireSendLock(): bool
+    {
+        $affected = DB::table('campaign_recipients')
+            ->where('id', $this->id)
+            ->where('email_status', '!=', 'sending')
+            ->where('email_status', '!=', 'sent')
+            ->update([
+                'email_status' => 'sending',
+                'send_attempts' => DB::raw('send_attempts + 1'),
+                'updated_at' => now(),
+            ]);
+
+        if ($affected > 0) {
+            $this->refresh();
+            return true;
+        }
+
+        return false;
+    }
+
+    public function markAsSent(): void
+    {
+        $this->update([
+            'email_status' => 'sent',
+            'email_error' => null,
+        ]);
+    }
+
+    public function markAsFailed(string $error): void
+    {
+        $this->update([
+            'email_status' => 'failed',
+            'email_error' => $error,
+        ]);
     }
 
     public function campaign(): BelongsTo

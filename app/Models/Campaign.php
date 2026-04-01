@@ -69,4 +69,14 @@ class Campaign extends Model
     {
         return $this->status === 'completed';
     }
+
+    public function isPaused(): bool
+    {
+        return $this->status === 'paused';
+    }
+
+    public function isSendable(): bool
+    {
+        return $this->isActive();
+    }
 }
