@@ -32,9 +32,9 @@ class StudentSeeder extends Seeder
             ['customer_number' => 'MS-1020', 'name' => 'Ben Lang',            'email' => 'ben.lang@example.de'          ],
         ];
 
-        foreach ($students as $data) {
+        foreach ($students as $index => $data) {
             Student::create(array_merge($data, [
-                'phone' => fake('de_DE')->phoneNumber(),
+                'phone' => '069 ' . str_pad($index + 1, 4, '0', STR_PAD_LEFT) . rand(1000, 9999),
                 'active' => true,
             ]));
         }
