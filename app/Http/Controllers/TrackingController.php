@@ -31,43 +31,29 @@ class TrackingController extends Controller
     }
 
     /**
-     * Click-Tracking: Redirect zur Ziel-URL, email_clicked_at setzen.
+     * Click-Tracking: Ziel-URL aus Empfänger-Token ableiten, email_clicked_at setzen.
      */
     public function click(Request $request, string $trackingId)
     {
-        $url = $request->query('url');
-
-        // Sicherheits-Check: Nur eigene Domain als Redirect-Ziel
-        if (! $this->isAllowedRedirect($url)) {
-            abort(400, 'Ungültige Redirect-URL');
-        }
-
         $recipient = CampaignRecipient::where('tracking_id', $trackingId)->first();
 
-        if ($recipient && ! $recipient->email_clicked_at) {
+        if (! $recipient) {
+            abort(404);
+        }
+
+        if (! $recipient->email_clicked_at) {
             $recipient->update(['email_clicked_at' => now()]);
         }
 
+        // Ziel-URL aus dem Empfänger-Token ableiten
+        $baseUrl = config('msgraph.email_base_url', config('app.url'));
+        $url = rtrim($baseUrl, '/') . '/k/' . $recipient->token;
+
+        // ?via Parameter durchreichen (für zweite E-Mail-Adresse)
+        if ($request->query('via')) {
+            $url .= '?via=' . $request->query('via');
+        }
+
         return redirect($url);
-    }
-
-    private function isAllowedRedirect(?string $url): bool
-    {
-        if (empty($url)) {
-            return false;
-        }
-
-        $parsed = parse_url($url);
-        if (! $parsed || empty($parsed['host'])) {
-            // Relative URLs (z.B. /k/token) sind erlaubt, aber keine protocol-relative URLs (//)
-            return str_starts_with($url, '/') && ! str_starts_with($url, '//');
-        }
-
-        $allowedHosts = [
-            parse_url(config('app.url'), PHP_URL_HOST),
-            parse_url(config('msgraph.email_base_url', ''), PHP_URL_HOST),
-        ];
-
-        return in_array($parsed['host'], array_filter($allowedHosts));
     }
 }

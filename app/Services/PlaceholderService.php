@@ -13,20 +13,12 @@ class PlaceholderService
 
         $frist = $campaign->deadline->format('d.m.Y');
 
-        $baseUrl = config('msgraph.email_base_url');
-        if ($baseUrl) {
-            $directLink = rtrim($baseUrl, '/') . '/k/' . $recipient->token;
-        } else {
-            $directLink = route('landing.show', $recipient->token);
-        }
+        // Click-Tracking: Kurzer Redirect-Link (Ziel-URL wird serverseitig aus Token aufgelöst)
+        $baseUrl = config('msgraph.email_base_url') ?: config('app.url');
+        $link = rtrim($baseUrl, '/') . '/t/click/' . $recipient->tracking_id;
         if ($viaEmail) {
-            $directLink .= '?via=' . $viaEmail;
+            $link .= '?via=' . $viaEmail;
         }
-
-        // Click-Tracking: Link über Redirect leiten
-        $trackingBaseUrl = rtrim($baseUrl ?: config('app.url'), '/');
-        $link = $trackingBaseUrl . '/t/click/' . $recipient->tracking_id
-            . '?url=' . urlencode($directLink);
 
         $placeholders = [
             '{{anrede}}' => $student->salutation,
