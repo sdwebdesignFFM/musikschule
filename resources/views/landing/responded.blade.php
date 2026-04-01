@@ -23,7 +23,7 @@
         <p class="text-subtle text-[15px] leading-relaxed max-w-[520px]">
             Diese Rückmeldung wurde
             @if($recipient->responded_at)
-                bereits am <strong>{{ $recipient->responded_at->format('d.m.Y') }}</strong>
+                am <strong>{{ $recipient->responded_at->format('d.m.Y') }}</strong>
                 um <strong>{{ $recipient->responded_at->format('H:i') }} Uhr</strong>
             @endif
             übermittelt. Eine erneute Übermittlung ist nicht möglich.
