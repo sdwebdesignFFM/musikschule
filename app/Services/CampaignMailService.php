@@ -121,9 +121,15 @@ class CampaignMailService
     {
         $baseUrl = config('msgraph.email_base_url', config('app.url'));
         $pixelUrl = rtrim($baseUrl, '/') . '/t/open/' . $trackingId;
-        $pixel = '<img src="' . $pixelUrl . '" width="1" height="1" alt="" style="display:block !important;width:1px !important;height:1px !important;overflow:hidden !important;line-height:0 !important;visibility:hidden !important;max-height:0 !important;max-width:0 !important;opacity:0 !important;mso-hide:all !important;" />';
+        $pixel = '<tr><td style="font-size:0;line-height:0;height:0;overflow:hidden;mso-hide:all;" aria-hidden="true"><img src="' . $pixelUrl . '" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0;" /></td></tr>';
 
-        return str_replace('</body>', $pixel . '</body>', $html);
+        // Vor dem letzten </table> in der äußeren Struktur einfügen
+        $pos = strrpos($html, '</table>');
+        if ($pos !== false) {
+            $html = substr_replace($html, $pixel, $pos, 0);
+        }
+
+        return $html;
     }
 
     private function wrapInHtmlTemplate(string $body): string
