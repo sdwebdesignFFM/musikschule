@@ -205,6 +205,12 @@ class StudentResource extends Resource
                     ->label('Excel-Import')
                     ->icon('heroicon-o-arrow-up-tray')
                     ->form([
+                        Forms\Components\Placeholder::make('template_download')
+                            ->label('')
+                            ->content(new \Illuminate\Support\HtmlString(
+                                '<a href="/beispiel-import.csv" download class="text-sm text-primary-600 hover:underline">Beispiel-CSV herunterladen</a>'
+                                . '<br><span class="text-xs text-gray-500">Spalten: kassenzeichen, name, email, email_2</span>'
+                            )),
                         Forms\Components\FileUpload::make('file')
                             ->label('Excel-Datei')
                             ->acceptedFileTypes([
