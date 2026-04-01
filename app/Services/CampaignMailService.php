@@ -121,7 +121,7 @@ class CampaignMailService
     {
         $baseUrl = config('msgraph.email_base_url', config('app.url'));
         $pixelUrl = rtrim($baseUrl, '/') . '/t/open/' . $trackingId;
-        $pixel = '<img src="' . $pixelUrl . '" width="1" height="1" alt="" style="display:none;border:0;" />';
+        $pixel = '<img src="' . $pixelUrl . '" width="1" height="1" alt="" style="display:block !important;width:1px !important;height:1px !important;overflow:hidden !important;line-height:0 !important;visibility:hidden !important;max-height:0 !important;max-width:0 !important;opacity:0 !important;mso-hide:all !important;" />';
 
         return str_replace('</body>', $pixel . '</body>', $html);
     }
