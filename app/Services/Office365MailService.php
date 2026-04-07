@@ -13,6 +13,14 @@ class Office365MailService
 
     public function sendMail(string $to, string $subject, string $htmlBody): void
     {
+        // Whitespace/Non-Breaking-Space defensiv entfernen — Office365 lehnt
+        // Adressen mit Trailing-Space mit ErrorInvalidRecipients ab.
+        $to = trim(str_replace(["\xC2\xA0", "\xE2\x80\x8B"], '', $to));
+
+        if ($to === '' || ! filter_var($to, FILTER_VALIDATE_EMAIL)) {
+            throw new \InvalidArgumentException("Ungültige E-Mail-Adresse: '{$to}'");
+        }
+
         // Lokal: über Laravel Mail (Mailpit) senden, außer Graph API ist erzwungen
         if (app()->environment('local', 'testing') && !config('msgraph.force_live')) {
             $this->sendViaLaravelMail($to, $subject, $htmlBody);

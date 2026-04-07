@@ -11,6 +11,12 @@ class PlaceholderService
         $student = $recipient->student;
         $campaign = $recipient->campaign;
 
+        if (! $student || ! $campaign) {
+            throw new \RuntimeException(
+                "PlaceholderService: Empfänger {$recipient->id} hat keinen Student oder keine Kampagne (möglicherweise gelöscht)."
+            );
+        }
+
         $frist = $campaign->deadline->format('d.m.Y');
 
         // Click-Tracking: Kurzer Redirect-Link (Ziel-URL wird serverseitig aus Token aufgelöst)
@@ -21,7 +27,7 @@ class PlaceholderService
         }
 
         $placeholders = [
-            '{{anrede}}' => $student->salutation,
+            '{{anrede}}' => 'Guten Tag',
             '{{name}}' => $student->name,
             '{{email}}' => $student->email,
             '{{email_2}}' => $student->email_2 ?? '',

@@ -90,6 +90,17 @@ class CampaignRecipient extends Model
 
     public function markAsFailed(string $error): void
     {
+        // Wenn mindestens eine der beiden Adressen erfolgreich versendet wurde,
+        // gilt der Empfänger als zugestellt — der Fehler betrifft nur die zweite
+        // Adresse. Wir speichern den Fehler-Text, behalten aber Status 'sent'.
+        if ($this->email_1_sent || $this->email_2_sent) {
+            $this->update([
+                'email_status' => 'sent',
+                'email_error' => $error,
+            ]);
+            return;
+        }
+
         $this->update([
             'email_status' => 'failed',
             'email_error' => $error,

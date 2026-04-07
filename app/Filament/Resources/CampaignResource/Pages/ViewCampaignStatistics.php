@@ -42,9 +42,25 @@ class ViewCampaignStatistics extends Page implements HasTable
         $recipients = $this->record->recipients();
 
         $total = $recipients->count();
-        $sent = (clone $recipients)->where('email_status', 'sent')->count();
-        $pending = (clone $recipients)->whereIn('email_status', ['pending', 'sending'])->count();
-        $failed = (clone $recipients)->where('email_status', 'failed')->count();
+        // 'sent' = Status 'sent' ODER mind. eine der beiden Mails versendet
+        $sent = (clone $recipients)
+            ->where(function ($q) {
+                $q->where('email_status', 'sent')
+                    ->orWhere('email_1_sent', true)
+                    ->orWhere('email_2_sent', true);
+            })
+            ->count();
+        $pending = (clone $recipients)
+            ->whereIn('email_status', ['pending', 'sending'])
+            ->where('email_1_sent', false)
+            ->where('email_2_sent', false)
+            ->count();
+        // 'failed' = Status 'failed' UND keine der beiden Mails versendet
+        $failed = (clone $recipients)
+            ->where('email_status', 'failed')
+            ->where('email_1_sent', false)
+            ->where('email_2_sent', false)
+            ->count();
         $accepted = (clone $recipients)->where('status', 'accepted')->count();
         $declined = (clone $recipients)->where('status', 'declined')->count();
         $opened = (clone $recipients)->whereNotNull('email_opened_at')->count();
