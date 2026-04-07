@@ -1,12 +1,18 @@
 <?php
 
+use App\Exports\BeispielImportExport;
 use App\Http\Controllers\LandingPageController;
 use App\Http\Controllers\TrackingController;
 use Illuminate\Support\Facades\Route;
+use Maatwebsite\Excel\Facades\Excel;
 
 Route::get('/', function () {
     return view('welcome');
 });
+
+Route::get('/beispiel-import.xlsx', function () {
+    return Excel::download(new BeispielImportExport(), 'beispiel-import.xlsx');
+})->name('beispiel-import');
 
 Route::get('/t/open/{trackingId}', [TrackingController::class, 'open'])->name('tracking.open');
 Route::get('/t/click/{trackingId}', [TrackingController::class, 'click'])->name('tracking.click');
