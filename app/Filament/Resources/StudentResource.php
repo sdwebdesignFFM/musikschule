@@ -208,7 +208,7 @@ class StudentResource extends Resource
                         Forms\Components\Placeholder::make('template_download')
                             ->label('')
                             ->content(new \Illuminate\Support\HtmlString(
-                                '<a href="/beispiel-import.csv" download class="text-sm text-primary-600 hover:underline">Beispiel-CSV herunterladen</a>'
+                                '<a href="/beispiel-import.xlsx" class="text-sm text-primary-600 hover:underline">Beispiel-Excel herunterladen</a>'
                                 . '<br><span class="text-xs text-gray-500">Spalten: kassenzeichen, name, email, email_2</span>'
                             )),
                         Forms\Components\FileUpload::make('file')
@@ -222,21 +222,37 @@ class StudentResource extends Resource
                     ])
                     ->action(function (array $data): void {
                         $import = new \App\Imports\StudentsImport();
-                        $import->import(storage_path('app/public/' . $data['file']));
+
+                        try {
+                            $import->import(storage_path('app/public/' . $data['file']));
+                        } catch (\Throwable $e) {
+                            \Filament\Notifications\Notification::make()
+                                ->danger()
+                                ->title('Import fehlgeschlagen')
+                                ->body($e->getMessage())
+                                ->persistent()
+                                ->send();
+                            return;
+                        }
 
                         $failures = $import->failures();
                         if ($failures->isNotEmpty()) {
+                            $details = $failures->take(10)->map(
+                                fn ($f) => 'Zeile ' . $f->row() . ': ' . implode(', ', $f->errors())
+                            )->implode("\n");
+                            $more = $failures->count() > 10 ? "\n… und " . ($failures->count() - 10) . ' weitere.' : '';
+
                             \Filament\Notifications\Notification::make()
                                 ->warning()
-                                ->title('Import abgeschlossen mit Fehlern')
-                                ->body($failures->count() . ' Zeile(n) konnten nicht importiert werden.')
+                                ->title($failures->count() . ' Zeile(n) übersprungen')
+                                ->body($details . $more)
                                 ->persistent()
                                 ->send();
                         } else {
                             \Filament\Notifications\Notification::make()
                                 ->success()
                                 ->title('Import erfolgreich')
-                                ->body('Alle Schüler wurden importiert.')
+                                ->body('Alle Empfänger wurden importiert.')
                                 ->send();
                         }
                     }),

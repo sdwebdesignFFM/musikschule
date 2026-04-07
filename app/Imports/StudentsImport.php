@@ -17,15 +17,12 @@ class StudentsImport implements ToModel, WithHeadingRow, WithValidation, SkipsEm
 
     public function model(array $row): ?Student
     {
-        $customerNumber = $row['kassenzeichen'] ?? $row['kundennummer'] ?? null;
-        $email2 = $row['email_2'] ?? $row['e_mail_2'] ?? $row['email2'] ?? null;
-
         return Student::updateOrCreate(
-            ['customer_number' => $customerNumber],
+            ['customer_number' => $row['kassenzeichen']],
             [
                 'name' => $row['name'],
-                'email' => $row['email'] ?? $row['e_mail'] ?? $row['e-mail'] ?? null,
-                'email_2' => $email2,
+                'email' => $row['email'],
+                'email_2' => $row['email_2'] ?: null,
             ]
         );
     }
@@ -33,15 +30,29 @@ class StudentsImport implements ToModel, WithHeadingRow, WithValidation, SkipsEm
     public function rules(): array
     {
         return [
+            'kassenzeichen' => 'required',
             'name' => 'required|string',
+            'email' => 'required|email',
+            'email_2' => 'nullable|email',
+        ];
+    }
+
+    public function customValidationMessages(): array
+    {
+        return [
+            'kassenzeichen.required' => 'Kassenzeichen fehlt.',
+            'name.required' => 'Name fehlt.',
+            'email.required' => 'E-Mail fehlt.',
+            'email.email' => 'E-Mail ist ungültig.',
+            'email_2.email' => 'Zweite E-Mail ist ungültig.',
         ];
     }
 
     public function prepareForValidation(array $data): array
     {
-        if (empty($data['kassenzeichen'] ?? null) && empty($data['kundennummer'] ?? null)) {
-            $data['kassenzeichen'] = null;
-        }
+        $data['kassenzeichen'] = $data['kassenzeichen'] ?? $data['kundennummer'] ?? null;
+        $data['email'] = $data['email'] ?? $data['e_mail'] ?? $data['e-mail'] ?? null;
+        $data['email_2'] = $data['email_2'] ?? $data['e_mail_2'] ?? $data['email2'] ?? null;
 
         return $data;
     }
