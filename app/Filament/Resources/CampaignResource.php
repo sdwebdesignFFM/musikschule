@@ -321,38 +321,26 @@ class CampaignResource extends Resource
                     ->color('success')
                     ->requiresConfirmation()
                     ->modalHeading('Kampagne fortsetzen')
-                    ->modalDescription('Ausstehende und fehlgeschlagene Empfänger werden erneut versendet.')
+                    ->modalDescription(function (Campaign $record): string {
+                        $toSend = self::countResendable($record);
+                        $excluded = self::countAlreadySent($record);
+
+                        return "Es werden {$toSend} Empfänger versendet, die noch keine E-Mail erhalten haben."
+                            . ($excluded > 0
+                                ? " {$excluded} bereits versendete Empfänger werden ausgeschlossen (kein Doppel-Versand)."
+                                : '');
+                    })
                     ->modalSubmitActionLabel('Ja, fortsetzen')
                     ->visible(fn (Campaign $record): bool => $record->isPaused())
                     ->action(function (Campaign $record): void {
                         $record->update(['status' => 'active']);
+                        $count = self::dispatchResendableRecipients($record);
 
-                        $initialEmail = $record->emails()->where('type', 'initial')->first();
-                        if ($initialEmail) {
-                            $recipients = $record->recipients()
-                                ->whereIn('email_status', ['pending', 'failed'])
-                                ->where('status', 'pending')
-                                ->get();
-
-                            foreach ($recipients as $index => $recipient) {
-                                // Sent-Flags zurücksetzen bei fehlgeschlagenen, damit Retry funktioniert
-                                if ($recipient->email_status === 'failed') {
-                                    $recipient->update([
-                                        'email_status' => 'pending',
-                                        'email_1_sent' => false,
-                                        'email_2_sent' => false,
-                                    ]);
-                                }
-                                SendCampaignEmail::dispatch($recipient, $initialEmail)
-                                    ->delay(now()->addSeconds($index * 2));
-                            }
-
-                            \Filament\Notifications\Notification::make()
-                                ->success()
-                                ->title('Kampagne fortgesetzt')
-                                ->body("{$recipients->count()} E-Mail(s) werden versendet.")
-                                ->send();
-                        }
+                        \Filament\Notifications\Notification::make()
+                            ->success()
+                            ->title('Kampagne fortgesetzt')
+                            ->body("{$count} E-Mail(s) werden versendet.")
+                            ->send();
                     }),
                 Tables\Actions\Action::make('retryFailed')
                     ->label('Fehler erneut senden')
@@ -360,32 +348,28 @@ class CampaignResource extends Resource
                     ->color('danger')
                     ->requiresConfirmation()
                     ->modalHeading('Fehlgeschlagene E-Mails erneut senden')
-                    ->modalDescription('Nur fehlgeschlagene Empfänger werden erneut versendet.')
+                    ->modalDescription(function (Campaign $record): string {
+                        $toSend = self::countResendable($record);
+                        $excluded = self::countAlreadySent($record);
+
+                        return "Es werden {$toSend} Empfänger versendet, die noch keine E-Mail erhalten haben."
+                            . ($excluded > 0
+                                ? " {$excluded} bereits versendete Empfänger werden ausgeschlossen (kein Doppel-Versand)."
+                                : '');
+                    })
                     ->modalSubmitActionLabel('Ja, erneut senden')
-                    ->visible(fn (Campaign $record): bool => $record->isActive() && $record->recipients()->where('email_status', 'failed')->exists())
+                    ->visible(fn (Campaign $record): bool => ($record->isActive() || $record->isPaused()) && self::countResendable($record) > 0)
                     ->action(function (Campaign $record): void {
-                        $initialEmail = $record->emails()->where('type', 'initial')->first();
-                        if (! $initialEmail) return;
-
-                        $failedRecipients = $record->recipients()
-                            ->where('email_status', 'failed')
-                            ->where('status', 'pending')
-                            ->get();
-
-                        foreach ($failedRecipients as $index => $recipient) {
-                            $recipient->update([
-                                'email_status' => 'pending',
-                                'email_1_sent' => false,
-                                'email_2_sent' => false,
-                            ]);
-                            SendCampaignEmail::dispatch($recipient, $initialEmail)
-                                ->delay(now()->addSeconds($index * 2));
+                        if ($record->isPaused()) {
+                            $record->update(['status' => 'active']);
                         }
+
+                        $count = self::dispatchResendableRecipients($record);
 
                         \Filament\Notifications\Notification::make()
                             ->success()
                             ->title('Erneuter Versand gestartet')
-                            ->body("{$failedRecipients->count()} fehlgeschlagene E-Mail(s) werden erneut versendet.")
+                            ->body("{$count} E-Mail(s) werden erneut versendet.")
                             ->send();
                     }),
                 Tables\Actions\Action::make('statistics')
@@ -446,6 +430,68 @@ class CampaignResource extends Resource
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ]);
+    }
+
+    /**
+     * Recipients, die noch KEINE E-Mail erhalten haben und versendet werden können.
+     * Doppel-Versand-Schutz: schließt alle Recipients aus, bei denen mindestens
+     * eine der beiden Adressen bereits versendet wurde.
+     */
+    private static function resendableQuery(Campaign $record)
+    {
+        return $record->recipients()
+            ->where('status', 'pending')
+            ->where('email_1_sent', false)
+            ->where('email_2_sent', false)
+            ->whereIn('email_status', ['pending', 'failed', 'sending']);
+    }
+
+    private static function countResendable(Campaign $record): int
+    {
+        return self::resendableQuery($record)->count();
+    }
+
+    private static function countAlreadySent(Campaign $record): int
+    {
+        return $record->recipients()
+            ->where(fn ($q) => $q->where('email_1_sent', true)->orWhere('email_2_sent', true))
+            ->count();
+    }
+
+    /**
+     * Dispatched alle re-sendbaren Recipients als SendCampaignEmail-Job.
+     * email_1_sent / email_2_sent werden NICHT zurückgesetzt — der MailService
+     * prüft diese Flags pro Adresse und überspringt bereits versendete Mails.
+     */
+    private static function dispatchResendableRecipients(Campaign $record): int
+    {
+        $initialEmail = $record->emails()->where('type', 'initial')->first();
+        if (! $initialEmail) {
+            return 0;
+        }
+
+        // Hängende 'sending'-Locks ohne Versand zurücksetzen, damit
+        // acquireSendLock() sie wieder fassen kann (Doppel-Versand-sicher,
+        // weil email_1_sent/email_2_sent unangetastet bleiben).
+        $record->recipients()
+            ->where('email_status', 'sending')
+            ->where('email_1_sent', false)
+            ->where('email_2_sent', false)
+            ->update(['email_status' => 'pending']);
+
+        $recipients = self::resendableQuery($record)->get();
+
+        foreach ($recipients as $index => $recipient) {
+            $recipient->update([
+                'email_status' => 'pending',
+                'email_error' => null,
+            ]);
+
+            SendCampaignEmail::dispatch($recipient, $initialEmail)
+                ->delay(now()->addSeconds($index * 2));
+        }
+
+        return $recipients->count();
     }
 
     public static function getRelations(): array
