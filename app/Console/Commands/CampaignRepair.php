@@ -9,13 +9,19 @@ use Illuminate\Support\Facades\DB;
 
 class CampaignRepair extends Command
 {
-    protected $signature = 'campaign:repair {--dry-run : Nur anzeigen, nichts ändern}';
+    protected $signature = 'campaign:repair {--dry-run : Nur anzeigen, nichts ändern} {--show-orphans : Verwaiste Recipients im Detail anzeigen}';
 
     protected $description = 'Repariert Kampagnen-Daten: Status-Inkonsistenzen, hängende Locks, Whitespace in Student-Daten';
 
     public function handle(): int
     {
         $dry = (bool) $this->option('dry-run');
+
+        // Sonder-Modus: nur Verwaiste anzeigen
+        if ($this->option('show-orphans')) {
+            return $this->showOrphans();
+        }
+
         $this->info($dry ? '=== DRY RUN (keine Änderungen) ===' : '=== REPAIR (mit Änderungen) ===');
 
         // 1) 'failed' Recipients, die eigentlich versendet wurden → auf 'sent'
@@ -88,17 +94,43 @@ class CampaignRepair extends Command
         });
         $this->line("4) Students mit bereinigtem Whitespace: {$cleaned}");
 
-        // 5) Permanent verwaiste Recipients (Student gelöscht) → als 'failed' fixieren
-        $orphanQuery = CampaignRecipient::query()
+        // 5) Verwaiste Recipients durch SoftDeletes von Students → Students wiederherstellen
+        // Recipients haben student_id mit FK cascadeOnDelete, d.h. ein echter Hard-Delete
+        // würde den Recipient mitlöschen. Verwaiste entstehen NUR durch SoftDeletes.
+        $orphanStudentIds = CampaignRecipient::query()
+            ->whereDoesntHave('student')
+            ->pluck('student_id')
+            ->unique()
+            ->filter()
+            ->values();
+
+        $restorableCount = Student::onlyTrashed()
+            ->whereIn('id', $orphanStudentIds)
+            ->count();
+
+        $this->line("5) SoftDeleted Students wiederherstellen (für verwaiste Recipients): {$restorableCount}");
+        if (! $dry && $restorableCount > 0) {
+            Student::onlyTrashed()
+                ->whereIn('id', $orphanStudentIds)
+                ->restore();
+        }
+
+        // Falls nach Restore noch Recipients ohne Student existieren (Hard-Delete-Edgecase),
+        // diese als permanent failed markieren.
+        $hardOrphanQuery = CampaignRecipient::query()
             ->whereDoesntHave('student')
             ->whereNotIn('email_status', ['failed']);
-        $orphans = (clone $orphanQuery)->count();
-        $this->line("5) Recipients ohne Student → 'failed' fixieren: {$orphans}");
-        if (! $dry && $orphans > 0) {
-            (clone $orphanQuery)->update([
-                'email_status' => 'failed',
-                'email_error' => 'Student wurde gelöscht',
-            ]);
+        $hardOrphans = $dry
+            ? (clone $hardOrphanQuery)->count() - $restorableCount
+            : (clone $hardOrphanQuery)->count();
+        if ($hardOrphans > 0) {
+            $this->line("   davon nicht wiederherstellbar (hard-deleted) → 'failed': {$hardOrphans}");
+            if (! $dry) {
+                (clone $hardOrphanQuery)->update([
+                    'email_status' => 'failed',
+                    'email_error' => 'Student wurde permanent gelöscht',
+                ]);
+            }
         }
 
         $this->newLine();
@@ -114,6 +146,71 @@ class CampaignRepair extends Command
         foreach ($stats as $row) {
             $this->line(sprintf('  %-10s %d', $row->email_status, $row->count));
         }
+
+        return self::SUCCESS;
+    }
+
+    private function showOrphans(): int
+    {
+        $this->info('=== Verwaiste Recipients (kein zugehöriger Student in Default-Query) ===');
+
+        $orphanRecipients = CampaignRecipient::query()
+            ->whereDoesntHave('student')
+            ->orderBy('student_id')
+            ->get();
+
+        if ($orphanRecipients->isEmpty()) {
+            $this->info('Keine verwaisten Recipients gefunden.');
+            return self::SUCCESS;
+        }
+
+        $studentIds = $orphanRecipients->pluck('student_id')->unique()->filter();
+
+        // Trashed Students (SoftDeleted) holen
+        $trashed = Student::onlyTrashed()
+            ->whereIn('id', $studentIds)
+            ->get()
+            ->keyBy('id');
+
+        $rows = [];
+        $restorable = 0;
+        $hardDeleted = 0;
+        foreach ($orphanRecipients as $r) {
+            $student = $trashed->get($r->student_id);
+            if ($student) {
+                $restorable++;
+                $rows[] = [
+                    $r->id,
+                    $r->student_id,
+                    $student->customer_number,
+                    $student->name,
+                    $student->email,
+                    'softdeleted ' . $student->deleted_at?->format('d.m.Y H:i'),
+                    $r->email_status,
+                ];
+            } else {
+                $hardDeleted++;
+                $rows[] = [
+                    $r->id,
+                    $r->student_id,
+                    '?',
+                    '?',
+                    '?',
+                    'HARD DELETED',
+                    $r->email_status,
+                ];
+            }
+        }
+
+        $this->table(
+            ['Recipient', 'Student-ID', 'Kassenz.', 'Name', 'E-Mail', 'Zustand', 'Mail-Status'],
+            $rows
+        );
+
+        $this->newLine();
+        $this->info("Gesamt verwaist: {$orphanRecipients->count()}");
+        $this->info("Wiederherstellbar (softdeleted): {$restorable}");
+        $this->info("Permanent verloren (hard deleted): {$hardDeleted}");
 
         return self::SUCCESS;
     }
