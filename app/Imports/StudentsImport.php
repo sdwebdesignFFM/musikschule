@@ -18,14 +18,26 @@ class StudentsImport implements ToModel, WithHeadingRow, WithValidation, SkipsEm
 
     public function model(array $row): ?Student
     {
-        return Student::updateOrCreate(
-            ['customer_number' => $row['kassenzeichen']],
-            [
-                'name' => $row['name'],
-                'email' => $row['email'],
-                'email_2' => $row['email_2'] ?: null,
-            ]
-        );
+        // withTrashed: Wenn ein Kassenzeichen schon existiert — auch als
+        // softgelöschter Datensatz — dann wiederverwenden und ggf. restoren.
+        // Sonst crasht der UNIQUE-Index auf customer_number, weil dieser
+        // deleted_at nicht berücksichtigt.
+        $student = Student::withTrashed()
+            ->firstOrNew(['customer_number' => $row['kassenzeichen']]);
+
+        $student->fill([
+            'name' => $row['name'],
+            'email' => $row['email'],
+            'email_2' => $row['email_2'] ?: null,
+        ]);
+
+        if ($student->trashed()) {
+            $student->restore();
+        }
+
+        $student->save();
+
+        return $student;
     }
 
     public function rules(): array
@@ -52,8 +64,23 @@ class StudentsImport implements ToModel, WithHeadingRow, WithValidation, SkipsEm
     public function prepareForValidation(array $data): array
     {
         $data['kassenzeichen'] = $data['kassenzeichen'] ?? $data['kundennummer'] ?? null;
-        $data['email'] = $data['email'] ?? $data['e_mail'] ?? $data['e-mail'] ?? null;
-        $data['email_2'] = $data['email_2'] ?? $data['e_mail_2'] ?? $data['email2'] ?? null;
+
+        // E-Mail-Spalten flexibel erkennen: Jede Spalte, deren Schlüssel "mail"
+        // enthält (e_mail, e_mail_adresse, email_adresse, mail, mailadresse,
+        // erziehungsberechtigter_email …), wird als E-Mail-Kandidat behandelt.
+        // Erste gefundene → email, zweite → email_2.
+        if (empty($data['email']) || empty($data['email_2'])) {
+            $mailKeys = array_filter(array_keys($data), fn ($key) => is_string($key) && str_contains($key, 'mail'));
+            $mailValues = [];
+            foreach ($mailKeys as $key) {
+                $value = is_string($data[$key]) ? trim($data[$key]) : $data[$key];
+                if (! empty($value)) {
+                    $mailValues[] = $value;
+                }
+            }
+            $data['email'] = $data['email'] ?? ($mailValues[0] ?? null);
+            $data['email_2'] = $data['email_2'] ?? ($mailValues[1] ?? null);
+        }
 
         // Whitespace, BOM, Non-Breaking-Space entfernen
         foreach (['kassenzeichen', 'name', 'email', 'email_2'] as $key) {
@@ -62,7 +89,7 @@ class StudentsImport implements ToModel, WithHeadingRow, WithValidation, SkipsEm
             }
         }
 
-        if ($data['email_2'] === '') {
+        if (($data['email_2'] ?? null) === '') {
             $data['email_2'] = null;
         }
 

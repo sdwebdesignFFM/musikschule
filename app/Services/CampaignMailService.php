@@ -23,37 +23,58 @@ class CampaignMailService
 
         $subject = $this->placeholderService->replace($email->subject, $recipient);
         $sentAny = false;
+        $errors = [];
 
-        // Sende an primäre E-Mail-Adresse (nur wenn noch nicht gesendet)
+        // Sende an primäre E-Mail-Adresse (nur wenn noch nicht gesendet).
+        // Eigener try/catch: Ein Fehler bei email_1 darf den Versand an
+        // email_2 nicht blockieren.
         if (! $recipient->email_1_sent) {
-            $body = $this->placeholderService->replace($email->body, $recipient);
-            $htmlBody = $this->wrapInHtmlTemplate($body);
-            $htmlBody = $this->injectTracking($htmlBody, $recipient->tracking_id);
+            try {
+                $body = $this->placeholderService->replace($email->body, $recipient);
+                $htmlBody = $this->wrapInHtmlTemplate($body);
+                $htmlBody = $this->injectTracking($htmlBody, $recipient->tracking_id);
 
-            $this->mailService->sendMail(
-                to: $recipient->student->email,
-                subject: $subject,
-                htmlBody: $htmlBody,
-            );
+                $this->mailService->sendMail(
+                    to: $recipient->student->email,
+                    subject: $subject,
+                    htmlBody: $htmlBody,
+                );
 
-            $recipient->update(['email_1_sent' => true]);
-            $sentAny = true;
+                $recipient->update(['email_1_sent' => true]);
+                $sentAny = true;
+            } catch (\Throwable $e) {
+                $errors[] = 'email_1 (' . $recipient->student->email . '): ' . $e->getMessage();
+                Log::warning('Kampagnen-Mail email_1 fehlgeschlagen', [
+                    'recipient_id' => $recipient->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
-        // Sende an zweite E-Mail-Adresse (nur wenn vorhanden und noch nicht gesendet)
+        // Sende an zweite E-Mail-Adresse (nur wenn vorhanden und noch nicht
+        // gesendet). Eigener try/catch: Ein Fehler hier darf nicht den bereits
+        // erfolgreich versendeten email_1 als failed markieren.
         if ($recipient->student->email_2 && ! $recipient->email_2_sent) {
-            $bodyEmail2 = $this->placeholderService->replace($email->body, $recipient, viaEmail: 2);
-            $htmlBodyEmail2 = $this->wrapInHtmlTemplate($bodyEmail2);
-            $htmlBodyEmail2 = $this->injectTracking($htmlBodyEmail2, $recipient->tracking_id);
+            try {
+                $bodyEmail2 = $this->placeholderService->replace($email->body, $recipient, viaEmail: 2);
+                $htmlBodyEmail2 = $this->wrapInHtmlTemplate($bodyEmail2);
+                $htmlBodyEmail2 = $this->injectTracking($htmlBodyEmail2, $recipient->tracking_id);
 
-            $this->mailService->sendMail(
-                to: $recipient->student->email_2,
-                subject: $subject,
-                htmlBody: $htmlBodyEmail2,
-            );
+                $this->mailService->sendMail(
+                    to: $recipient->student->email_2,
+                    subject: $subject,
+                    htmlBody: $htmlBodyEmail2,
+                );
 
-            $recipient->update(['email_2_sent' => true]);
-            $sentAny = true;
+                $recipient->update(['email_2_sent' => true]);
+                $sentAny = true;
+            } catch (\Throwable $e) {
+                $errors[] = 'email_2 (' . $recipient->student->email_2 . '): ' . $e->getMessage();
+                Log::warning('Kampagnen-Mail email_2 fehlgeschlagen', [
+                    'recipient_id' => $recipient->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         if ($sentAny) {
@@ -63,6 +84,23 @@ class CampaignMailService
                 'type' => $email->type,
                 'email_1_sent' => $recipient->email_1_sent,
                 'email_2_sent' => $recipient->email_2_sent,
+                'errors' => $errors ?: null,
+            ]);
+        }
+
+        // Nur werfen, wenn GAR NICHTS versendet werden konnte — dann greifen
+        // die Queue-Retries. Bei Teilerfolg (email_1 ok, email_2 kaputt)
+        // speichern wir den Fehlertext direkt auf dem Recipient und gelten
+        // als zugestellt. Retry würde ohnehin nicht helfen: markAsSent wird
+        // unten im Job aufgerufen, und ein anschließender Retry würde durch
+        // acquireSendLock() (email_status='sent') blockiert.
+        if (! $sentAny && ! empty($errors)) {
+            throw new \RuntimeException('Kampagnen-Mail-Versand fehlgeschlagen: ' . implode(' | ', $errors));
+        }
+
+        if ($sentAny && ! empty($errors)) {
+            $recipient->update([
+                'email_error' => 'Teilfehler: ' . implode(' | ', $errors),
             ]);
         }
     }

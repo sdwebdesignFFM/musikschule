@@ -150,9 +150,15 @@ class Office365MailService
         $windowStart = Cache::get($windowKey);
         $count = Cache::get($key, 0);
 
-        if ($windowStart && now()->diffInSeconds($windowStart) < 60) {
+        // Carbon 3: diffInSeconds gibt signed Werte zurück. Wir brauchen
+        // immer die absolute Dauer seit Window-Start in ganzen Sekunden.
+        $elapsed = $windowStart
+            ? (int) abs(now()->diffInSeconds($windowStart))
+            : null;
+
+        if ($windowStart && $elapsed < 60) {
             if ($count >= $limit) {
-                $waitSeconds = 60 - now()->diffInSeconds($windowStart);
+                $waitSeconds = max(0, 60 - $elapsed);
                 Log::info("Office365: Rate Limit erreicht, warte {$waitSeconds}s");
                 sleep($waitSeconds + 1);
                 Cache::put($key, 0, 120);

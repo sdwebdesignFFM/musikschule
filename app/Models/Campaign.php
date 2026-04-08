@@ -48,6 +48,21 @@ class Campaign extends Model
         return $this->hasMany(CampaignRecipient::class);
     }
 
+    /**
+     * Recipients deren Student tatsächlich noch existiert (nicht softgelöscht).
+     * Wird in der UI verwendet, damit verwaiste Empfänger nicht mitgezählt werden.
+     */
+    public function validRecipients(): HasMany
+    {
+        return $this->hasMany(CampaignRecipient::class)
+            ->whereExists(function ($query) {
+                $query->select(\DB::raw(1))
+                    ->from('students')
+                    ->whereColumn('students.id', 'campaign_recipients.student_id')
+                    ->whereNull('students.deleted_at');
+            });
+    }
+
     public function students(): BelongsToMany
     {
         return $this->belongsToMany(Student::class, 'campaign_recipients')

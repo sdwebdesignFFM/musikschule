@@ -39,7 +39,9 @@ class ViewCampaignStatistics extends Page implements HasTable
 
     public function getStats(): array
     {
-        $recipients = $this->record->recipients();
+        // validRecipients() schließt softgelöschte Students aus. Konsistenz
+        // mit der Edit-Seite (dort wird ebenfalls validRecipients() gezählt).
+        $recipients = $this->record->validRecipients();
 
         $total = $recipients->count();
         // 'sent' = Status 'sent' ODER mind. eine der beiden Mails versendet
@@ -84,6 +86,12 @@ class ViewCampaignStatistics extends Page implements HasTable
             ->query(
                 CampaignRecipient::query()
                     ->where('campaign_id', $this->record->id)
+                    ->whereExists(function ($q) {
+                        $q->select(\DB::raw(1))
+                            ->from('students')
+                            ->whereColumn('students.id', 'campaign_recipients.student_id')
+                            ->whereNull('students.deleted_at');
+                    })
                     ->with('student')
             )
             ->columns([

@@ -114,7 +114,11 @@ class CampaignRecipient extends Model
 
     public function student(): BelongsTo
     {
-        return $this->belongsTo(Student::class);
+        // withTrashed: Ein Empfänger wurde zum Zeitpunkt des Imports einer
+        // Kampagne zugewiesen. Wird der Student später (soft-)gelöscht, soll
+        // der laufende Versand trotzdem funktionieren — der Consent bezog
+        // sich auf den Datenstand zum Import.
+        return $this->belongsTo(Student::class)->withTrashed();
     }
 
     public function isPending(): bool

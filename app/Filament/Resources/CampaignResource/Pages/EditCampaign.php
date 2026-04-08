@@ -29,17 +29,11 @@ class EditCampaign extends EditRecord
             }
         }
 
-        // Empfänger laden
-        $recipientCount = $campaign->recipients()->count();
-        $activeStudentCount = Student::where('active', true)->count();
-
-        if ($recipientCount > 0 && $recipientCount === $activeStudentCount) {
-            $data['select_all_students'] = true;
-            $data['studentIds'] = [];
-        } else {
-            $data['select_all_students'] = false;
-            $data['studentIds'] = $campaign->recipients()->pluck('student_id')->toArray();
-        }
+        // Empfänger werden im Edit-Modus NICHT als Tags ins Multi-Select
+        // geladen (sonst 2000+ DOM-Nodes). Stattdessen wird nur die Anzahl
+        // angezeigt und das Multi-Select arbeitet additiv.
+        $data['select_all_students'] = false;
+        $data['studentIds'] = [];
 
         return $data;
     }
@@ -91,31 +85,28 @@ class EditCampaign extends EditRecord
 
     private function syncRecipients($campaign, array $data): void
     {
-        if (!empty($data['select_all_students'])) {
-            $newStudentIds = Student::where('active', true)->pluck('id');
-        } else {
-            $newStudentIds = collect($data['studentIds'] ?? []);
+        // Im Edit-Modus arbeitet das Formular additiv:
+        // - studentIds enthält nur NEU hinzuzufügende Schüler
+        // - Bestehende Empfänger werden nie über das Form gelöscht
+        // - Bulk-Operationen (alle hinzufügen / alle entfernen) laufen über
+        //   Header-Actions, nicht über Save.
+        if (! $campaign->isDraft()) {
+            return;
         }
 
-        $existingRecipients = $campaign->recipients()->get();
-        $existingStudentIds = $existingRecipients->pluck('student_id');
+        $newStudentIds = collect($data['studentIds'] ?? []);
+        if ($newStudentIds->isEmpty()) {
+            return;
+        }
 
-        // Neue Empfänger hinzufügen
+        $existingStudentIds = $campaign->recipients()->pluck('student_id');
         $toAdd = $newStudentIds->diff($existingStudentIds);
+
         foreach ($toAdd as $studentId) {
             CampaignRecipient::create([
                 'campaign_id' => $campaign->id,
                 'student_id' => $studentId,
             ]);
-        }
-
-        // Entfernte Empfänger löschen (nur wenn noch nicht versendet)
-        if (empty($data['select_all_students'])) {
-            $toRemove = $existingStudentIds->diff($newStudentIds);
-            $campaign->recipients()
-                ->whereIn('student_id', $toRemove)
-                ->whereNull('initial_sent_at')
-                ->delete();
         }
     }
 
@@ -148,7 +139,9 @@ class EditCampaign extends EditRecord
 
                     $initialEmail = $this->record->emails()->where('type', 'initial')->first();
                     if ($initialEmail) {
-                        $recipients = $this->record->recipients()->where('status', 'pending')->get();
+                        // validRecipients: verwaiste Empfänger (Student soft-deleted)
+                        // werden niemals dispatched.
+                        $recipients = $this->record->validRecipients()->where('status', 'pending')->get();
                         foreach ($recipients as $index => $recipient) {
                             SendCampaignEmail::dispatch($recipient, $initialEmail)
                                 ->delay(now()->addSeconds($index * 2));
@@ -158,7 +151,7 @@ class EditCampaign extends EditRecord
                     \Filament\Notifications\Notification::make()
                         ->success()
                         ->title('Kampagne gestartet')
-                        ->body("Die Kampagne wurde aktiviert. {$this->record->recipients()->count()} E-Mail(s) werden versendet.")
+                        ->body("Die Kampagne wurde aktiviert. {$this->record->validRecipients()->count()} E-Mail(s) werden versendet.")
                         ->send();
 
                     $this->redirect($this->getResource()::getUrl('index'));
@@ -186,37 +179,34 @@ class EditCampaign extends EditRecord
                 ->color('success')
                 ->requiresConfirmation()
                 ->modalHeading('Kampagne fortsetzen')
-                ->modalDescription('Ausstehende und fehlgeschlagene Empfänger werden erneut versendet.')
+                ->modalDescription(function () {
+                    $count = CampaignResource::countResendable($this->record);
+                    $alreadySent = CampaignResource::countAlreadySent($this->record);
+                    return "Es werden {$count} Empfänger versendet, die bisher noch nichts erhalten haben. {$alreadySent} bereits versendete Empfänger werden ausgeschlossen (kein Doppel-Versand).";
+                })
                 ->modalSubmitActionLabel('Ja, fortsetzen')
                 ->visible(fn (): bool => $this->record->isPaused())
                 ->action(function (): void {
                     $this->record->update(['status' => 'active']);
 
-                    $initialEmail = $this->record->emails()->where('type', 'initial')->first();
-                    if ($initialEmail) {
-                        $recipients = $this->record->recipients()
-                            ->whereIn('email_status', ['pending', 'failed'])
-                            ->where('status', 'pending')
-                            ->get();
+                    // Einheitlicher Dispatch-Pfad — identisch zur Resume-Action
+                    // in der Listen-Ansicht (CampaignResource). Kein Drift mehr.
+                    $count = CampaignResource::dispatchResendableRecipients($this->record);
 
-                        foreach ($recipients as $index => $recipient) {
-                            if ($recipient->email_status === 'failed') {
-                                $recipient->update([
-                                    'email_status' => 'pending',
-                                    'email_1_sent' => false,
-                                    'email_2_sent' => false,
-                                ]);
-                            }
-                            SendCampaignEmail::dispatch($recipient, $initialEmail)
-                                ->delay(now()->addSeconds($index * 2));
-                        }
-
+                    if ($count === 0) {
                         \Filament\Notifications\Notification::make()
-                            ->success()
-                            ->title('Kampagne fortgesetzt')
-                            ->body("{$recipients->count()} E-Mail(s) werden versendet.")
+                            ->warning()
+                            ->title('Nichts zu versenden')
+                            ->body('Entweder ist keine Erst-Mail definiert oder alle Empfänger haben bereits eine Mail erhalten.')
                             ->send();
+                        return;
                     }
+
+                    \Filament\Notifications\Notification::make()
+                        ->success()
+                        ->title('Kampagne fortgesetzt')
+                        ->body("{$count} E-Mail(s) werden versendet. Bereits versendete Empfänger wurden ausgeschlossen.")
+                        ->send();
                 }),
             Actions\DeleteAction::make()
                 ->visible(fn (): bool => $this->record->isDraft()),

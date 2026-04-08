@@ -28,6 +28,33 @@ class SendCampaignEmail implements ShouldQueue
     {
         $this->recipient->loadMissing(['campaign', 'student']);
         $campaign = $this->recipient->campaign;
+        $student = $this->recipient->student;
+
+        // Campaign-Null-Check: SoftDeletes auf Campaign sind aktiv, die
+        // campaign()-Relation nutzt KEIN withTrashed — eine softgelöschte
+        // Kampagne liefert daher null.
+        if (! $campaign) {
+            Log::warning('SendCampaignEmail: Kampagne (soft-)gelöscht, übersprungen', [
+                'recipient_id' => $this->recipient->id,
+                'campaign_id' => $this->recipient->campaign_id,
+            ]);
+            $this->recipient->markAsFailed('Kampagne nicht gefunden');
+            return;
+        }
+
+        // Student-Guard: student() nutzt withTrashed(), damit laufende Sends
+        // eines mid-Kampagne soft-gelöschten Studenten abgeschlossen werden
+        // können. Für neue Dispatches (initial_sent_at ist NULL) wollen wir
+        // aber nicht an soft-gelöschte Adressen senden — das wären Mails an
+        // alte Daten, die niemand mehr sehen soll.
+        if (! $student || ($student->trashed() && ! $this->recipient->initial_sent_at)) {
+            Log::warning('SendCampaignEmail: Student (soft-)gelöscht, übersprungen', [
+                'recipient_id' => $this->recipient->id,
+                'student_id' => $this->recipient->student_id,
+            ]);
+            $this->recipient->markAsFailed('Student nicht mehr vorhanden');
+            return;
+        }
 
         // Prüfe: Kampagne noch sendbar? (Pausier-Check)
         if (! $campaign->isSendable()) {

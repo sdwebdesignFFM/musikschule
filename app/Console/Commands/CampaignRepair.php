@@ -94,11 +94,19 @@ class CampaignRepair extends Command
         });
         $this->line("4) Students mit bereinigtem Whitespace: {$cleaned}");
 
-        // 5) Verwaiste Recipients durch SoftDeletes von Students → Students wiederherstellen
-        // Recipients haben student_id mit FK cascadeOnDelete, d.h. ein echter Hard-Delete
-        // würde den Recipient mitlöschen. Verwaiste entstehen NUR durch SoftDeletes.
+        // 5) Verwaiste Recipients: Students wurden softgelöscht → wiederherstellen
+        //
+        // WICHTIG: CampaignRecipient::student() verwendet withTrashed(), d.h.
+        // whereDoesntHave('student') findet softgelöschte NICHT mehr als verwaist.
+        // Wir brauchen eine explizite whereNotExists Query, die nur LIVE Students
+        // zählt.
         $orphanStudentIds = CampaignRecipient::query()
-            ->whereDoesntHave('student')
+            ->whereNotExists(function ($query) {
+                $query->select(DB::raw(1))
+                    ->from('students')
+                    ->whereColumn('students.id', 'campaign_recipients.student_id')
+                    ->whereNull('students.deleted_at');
+            })
             ->pluck('student_id')
             ->unique()
             ->filter()
@@ -115,14 +123,17 @@ class CampaignRepair extends Command
                 ->restore();
         }
 
-        // Falls nach Restore noch Recipients ohne Student existieren (Hard-Delete-Edgecase),
-        // diese als permanent failed markieren.
+        // Hard-Delete-Edgecase: Recipients ohne Student in der gesamten Tabelle
+        // (weder live noch trashed). Sollte wegen FK cascadeOnDelete nicht
+        // vorkommen, aber defensiv abfangen.
         $hardOrphanQuery = CampaignRecipient::query()
-            ->whereDoesntHave('student')
+            ->whereNotExists(function ($query) {
+                $query->select(DB::raw(1))
+                    ->from('students')
+                    ->whereColumn('students.id', 'campaign_recipients.student_id');
+            })
             ->whereNotIn('email_status', ['failed']);
-        $hardOrphans = $dry
-            ? (clone $hardOrphanQuery)->count() - $restorableCount
-            : (clone $hardOrphanQuery)->count();
+        $hardOrphans = (clone $hardOrphanQuery)->count();
         if ($hardOrphans > 0) {
             $this->line("   davon nicht wiederherstellbar (hard-deleted) → 'failed': {$hardOrphans}");
             if (! $dry) {
@@ -152,10 +163,18 @@ class CampaignRepair extends Command
 
     private function showOrphans(): int
     {
-        $this->info('=== Verwaiste Recipients (kein zugehöriger Student in Default-Query) ===');
+        $this->info('=== Verwaiste Recipients (kein LIVE Student vorhanden) ===');
 
+        // whereNotExists gegen 'students' mit whereNull('deleted_at') —
+        // whereDoesntHave würde durch withTrashed() in der Relation keine
+        // softgelöschten finden.
         $orphanRecipients = CampaignRecipient::query()
-            ->whereDoesntHave('student')
+            ->whereNotExists(function ($query) {
+                $query->select(DB::raw(1))
+                    ->from('students')
+                    ->whereColumn('students.id', 'campaign_recipients.student_id')
+                    ->whereNull('students.deleted_at');
+            })
             ->orderBy('student_id')
             ->get();
 
