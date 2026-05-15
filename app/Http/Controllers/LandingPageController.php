@@ -52,6 +52,10 @@ class LandingPageController extends Controller
             return view('landing.responded', compact('recipient'));
         }
 
+        if ($recipient->campaign->isExpired()) {
+            return view('landing.expired', compact('recipient'));
+        }
+
         // Bestimme, über welche E-Mail-Adresse der Link geöffnet wurde
         $via = $request->query('via');
         if ($via === '2' && $recipient->student->email_2) {
@@ -77,6 +81,10 @@ class LandingPageController extends Controller
 
         if ($recipient->hasResponded()) {
             return view('landing.responded', compact('recipient'));
+        }
+
+        if ($recipient->campaign->isExpired()) {
+            return view('landing.expired', compact('recipient'));
         }
 
         $request->validate([

@@ -94,4 +94,13 @@ class Campaign extends Model
     {
         return $this->isActive();
     }
+
+    public function isExpired(): bool
+    {
+        if ($this->isCompleted()) {
+            return true;
+        }
+
+        return $this->deadline && $this->deadline->isBefore(now()->startOfDay());
+    }
 }
