@@ -312,9 +312,18 @@ class StudentResource extends Resource
                                 'text/csv',
                             ])
                             ->required(),
+                        Forms\Components\Select::make('list_id')
+                            ->label('Importierte Schüler einer Liste hinzufügen (optional)')
+                            ->options(fn () => StudentList::orderBy('name')->pluck('name', 'id'))
+                            ->searchable()
+                            ->placeholder('Keine Liste — Schüler nur in Stammdaten anlegen')
+                            ->helperText('Falls ausgewählt, werden alle erfolgreich importierten Schüler dieser Liste hinzugefügt.'),
                     ])
                     ->action(function (array $data): void {
-                        $import = new \App\Imports\StudentsImport();
+                        $list = ! empty($data['list_id'])
+                            ? StudentList::find($data['list_id'])
+                            : null;
+                        $import = new \App\Imports\StudentsImport($list);
 
                         try {
                             $import->import(storage_path('app/public/' . $data['file']));
@@ -342,10 +351,14 @@ class StudentResource extends Resource
                                 ->persistent()
                                 ->send();
                         } else {
+                            $body = 'Alle Schüler wurden importiert.';
+                            if ($list) {
+                                $body .= ' Sie wurden zur Liste „' . $list->name . '" hinzugefügt.';
+                            }
                             \Filament\Notifications\Notification::make()
                                 ->success()
                                 ->title('Import erfolgreich')
-                                ->body('Alle Empfänger wurden importiert.')
+                                ->body($body)
                                 ->send();
                         }
                     }),

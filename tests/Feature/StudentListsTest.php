@@ -346,6 +346,75 @@ class StudentListsTest extends TestCase
         $this->assertStringNotContainsString('letzten 7 Tagen', $html);
     }
 
+    public function test_import_with_target_list_attaches_new_students(): void
+    {
+        $list = StudentList::create(['name' => 'Importliste']);
+
+        $import = new \App\Imports\StudentsImport($list);
+        // Direkt das model() aufrufen, ohne tatsaechliche Excel-Datei
+        $row = [
+            'kassenzeichen' => 'MS-9001',
+            'name' => 'Import Test',
+            'email' => 'import@test.de',
+            'email_2' => null,
+        ];
+        $student = $import->model($row);
+
+        $this->assertNotNull($student);
+        $this->assertSame(
+            [$list->id],
+            $student->fresh()->studentLists()->pluck('student_lists.id')->all()
+        );
+    }
+
+    public function test_import_without_target_list_does_not_attach(): void
+    {
+        $import = new \App\Imports\StudentsImport(null);
+        $student = $import->model([
+            'kassenzeichen' => 'MS-9002',
+            'name' => 'Solo',
+            'email' => 'solo@test.de',
+            'email_2' => null,
+        ]);
+
+        $this->assertSame(0, $student->fresh()->studentLists()->count());
+    }
+
+    public function test_import_with_target_list_is_idempotent_for_existing_student(): void
+    {
+        $existing = Student::factory()->create(['customer_number' => 'MS-9003']);
+        $list = StudentList::create(['name' => 'Reimport']);
+        $list->allMembers()->attach($existing->id);
+
+        $import = new \App\Imports\StudentsImport($list);
+        $import->model([
+            'kassenzeichen' => 'MS-9003',
+            'name' => 'Update',
+            'email' => 'update@test.de',
+            'email_2' => null,
+        ]);
+
+        $this->assertSame(1, $list->fresh()->allMembers()->count());
+    }
+
+    public function test_students_export_contains_list_column(): void
+    {
+        $student = Student::factory()->create();
+        $a = StudentList::create(['name' => 'A']);
+        $b = StudentList::create(['name' => 'B']);
+        $a->allMembers()->attach($student->id);
+        $b->allMembers()->attach($student->id);
+
+        $export = new \App\Exports\StudentsExport();
+        $headings = $export->headings();
+        $row = $export->map($student->fresh()->load('studentLists'));
+
+        $this->assertContains('In Listen', $headings);
+        $listColumn = $row[array_search('In Listen', $headings)];
+        $this->assertStringContainsString('A', $listColumn);
+        $this->assertStringContainsString('B', $listColumn);
+    }
+
     public function test_t23_latestResponse_returns_real_answer_across_campaigns(): void
     {
         $student = Student::factory()->create();

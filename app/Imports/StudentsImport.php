@@ -3,6 +3,7 @@
 namespace App\Imports;
 
 use App\Models\Student;
+use App\Models\StudentList;
 use Maatwebsite\Excel\Concerns\Importable;
 use Maatwebsite\Excel\Concerns\SkipsEmptyRows;
 use Maatwebsite\Excel\Concerns\SkipsFailures;
@@ -15,6 +16,10 @@ use Maatwebsite\Excel\Concerns\WithValidation;
 class StudentsImport implements ToModel, WithHeadingRow, WithValidation, SkipsEmptyRows, SkipsOnFailure, WithCustomCsvSettings
 {
     use SkipsFailures, Importable;
+
+    public function __construct(public ?StudentList $targetList = null)
+    {
+    }
 
     public function model(array $row): ?Student
     {
@@ -36,6 +41,13 @@ class StudentsImport implements ToModel, WithHeadingRow, WithValidation, SkipsEm
         }
 
         $student->save();
+
+        // Optional: importierten Schüler einer Liste hinzufügen. syncWithoutDetaching
+        // ist idempotent — Mehrfach-Import desselben Kassenzeichens dupliziert
+        // die Mitgliedschaft nicht.
+        if ($this->targetList) {
+            $this->targetList->allMembers()->syncWithoutDetaching([$student->id]);
+        }
 
         return $student;
     }
