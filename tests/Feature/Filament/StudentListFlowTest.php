@@ -8,6 +8,7 @@ use App\Filament\Resources\StudentListResource\Pages\CreateStudentList;
 use App\Filament\Resources\StudentListResource\Pages\EditStudentList;
 use App\Filament\Resources\StudentListResource\Pages\ListStudentLists;
 use App\Filament\Resources\StudentListResource\RelationManagers\MembersRelationManager;
+use App\Filament\Resources\StudentResource\Pages\EditStudent;
 use App\Filament\Resources\StudentResource\Pages\ListStudents;
 use App\Models\Campaign;
 use App\Models\CampaignEmail;
@@ -305,6 +306,44 @@ class StudentListFlowTest extends TestCase
             ->assertHasNoFormErrors();
 
         $this->assertSame(3, $campaign->fresh()->recipients()->count());
+    }
+
+    // ---- Schueler-Detail: Listen-Mitgliedschaft ----
+
+    public function test_student_edit_page_shows_current_list_memberships(): void
+    {
+        $student = Student::factory()->create();
+        $a = StudentList::create(['name' => 'Klavier']);
+        $b = StudentList::create(['name' => 'Geige']);
+        $a->allMembers()->attach($student->id);
+        $b->allMembers()->attach($student->id);
+
+        Livewire::test(EditStudent::class, ['record' => $student->id])
+            ->assertFormSet([
+                'studentLists' => [$a->id, $b->id],
+            ]);
+    }
+
+    public function test_student_edit_page_can_add_and_remove_list_memberships(): void
+    {
+        $student = Student::factory()->create();
+        $a = StudentList::create(['name' => 'A']);
+        $b = StudentList::create(['name' => 'B']);
+        $c = StudentList::create(['name' => 'C']);
+        $a->allMembers()->attach($student->id);
+
+        // A entfernen, B und C zuweisen
+        Livewire::test(EditStudent::class, ['record' => $student->id])
+            ->fillForm([
+                'studentLists' => [$b->id, $c->id],
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertEqualsCanonicalizing(
+            [$b->id, $c->id],
+            $student->fresh()->studentLists()->pluck('student_lists.id')->all()
+        );
     }
 
     // ---- Force-Delete-Absicherung in Filament-Pages ----

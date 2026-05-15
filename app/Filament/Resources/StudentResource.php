@@ -63,6 +63,21 @@ class StudentResource extends Resource
                             ->default(true),
                     ]),
 
+                Forms\Components\Section::make('Listen-Mitgliedschaft')
+                    ->description('Listen, in denen dieser Schüler enthalten ist. Hier können Listen zugewiesen oder entfernt werden.')
+                    ->schema([
+                        Forms\Components\Select::make('studentLists')
+                            ->label('Listen')
+                            ->multiple()
+                            ->relationship('studentLists', 'name')
+                            ->preload()
+                            ->searchable()
+                            ->placeholder('Keine Liste zugewiesen')
+                            ->columnSpanFull(),
+                    ])
+                    ->visible(fn ($record) => $record !== null)
+                    ->collapsible(),
+
                 Forms\Components\Section::make('Kampagnen-Rückmeldungen')
                     ->schema([
                         Forms\Components\Placeholder::make('responses_table')
