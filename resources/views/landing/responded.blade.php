@@ -5,6 +5,17 @@
 @section('content')
 <div class="max-w-[520px] mx-auto px-4 py-20">
 
+    @if($accidentalResend ?? false)
+        <div class="mb-8 bg-amber-50 border border-amber-200 rounded-xl p-5 text-left">
+            <h2 class="text-amber-900 font-semibold text-sm mb-1">Hinweis zur heutigen E-Mail</h2>
+            <p class="text-amber-800 text-sm leading-relaxed">
+                Die heutige E-Mail wurde versehentlich verschickt. Ihre Rückmeldung
+                haben wir bereits — die Angaben unten sind weiterhin gültig.
+                Wir bitten die Störung zu entschuldigen.
+            </p>
+        </div>
+    @endif
+
     <div class="text-center space-y-6">
 
         {{-- Success Circle --}}

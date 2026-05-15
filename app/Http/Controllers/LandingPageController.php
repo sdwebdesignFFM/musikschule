@@ -45,14 +45,21 @@ class LandingPageController extends Controller
     public function show(Request $request, string $token)
     {
         $recipient = CampaignRecipient::where('token', $token)
-            ->with(['student', 'campaign.documents'])
+            ->with(['student'])
             ->firstOrFail();
+
+        $campaign = Campaign::withTrashed()->with('documents')->find($recipient->campaign_id);
+        $recipient->setRelation('campaign', $campaign);
+
+        if ($accidental = $this->accidentalResendView($recipient, $campaign)) {
+            return $accidental;
+        }
 
         if ($recipient->hasResponded()) {
             return view('landing.responded', compact('recipient'));
         }
 
-        if ($recipient->campaign->isExpired()) {
+        if ($campaign->isExpired()) {
             return view('landing.expired', compact('recipient'));
         }
 
@@ -76,14 +83,21 @@ class LandingPageController extends Controller
     public function respond(Request $request, string $token)
     {
         $recipient = CampaignRecipient::where('token', $token)
-            ->with(['student', 'campaign'])
+            ->with(['student'])
             ->firstOrFail();
+
+        $campaign = Campaign::withTrashed()->find($recipient->campaign_id);
+        $recipient->setRelation('campaign', $campaign);
+
+        if ($accidental = $this->accidentalResendView($recipient, $campaign)) {
+            return $accidental;
+        }
 
         if ($recipient->hasResponded()) {
             return view('landing.responded', compact('recipient'));
         }
 
-        if ($recipient->campaign->isExpired()) {
+        if ($campaign->isExpired()) {
             return view('landing.expired', compact('recipient'));
         }
 
@@ -103,6 +117,35 @@ class LandingPageController extends Controller
         SendConfirmationEmail::dispatch($recipient);
 
         return view('landing.responded', compact('recipient'));
+    }
+
+    /**
+     * Wenn der Token zu einer soft-deleted (oder fehlenden) Kampagne gehört, wurde diese
+     * E-Mail versehentlich versendet. Liefert die passende Hinweisseite zurück — oder null,
+     * wenn die Kampagne noch existiert und der normale Flow weiterlaufen darf.
+     */
+    private function accidentalResendView(CampaignRecipient $recipient, ?Campaign $campaign)
+    {
+        if ($campaign && ! $campaign->trashed()) {
+            return null;
+        }
+
+        $previous = CampaignRecipient::where('student_id', $recipient->student_id)
+            ->where('id', '!=', $recipient->id)
+            ->whereIn('status', ['accepted', 'declined'])
+            ->whereHas('campaign')
+            ->with(['campaign', 'student'])
+            ->orderByDesc('responded_at')
+            ->first();
+
+        if ($previous) {
+            return view('landing.responded', [
+                'recipient' => $previous,
+                'accidentalResend' => true,
+            ]);
+        }
+
+        return view('landing.accidental', compact('recipient'));
     }
 
     private function campaignPlaceholders(Campaign $campaign): array
