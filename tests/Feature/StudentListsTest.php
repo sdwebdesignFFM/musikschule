@@ -397,6 +397,52 @@ class StudentListsTest extends TestCase
         $this->assertSame(1, $list->fresh()->allMembers()->count());
     }
 
+    public function test_soft_deleting_list_does_not_affect_existing_campaign_recipients(): void
+    {
+        // Liste mit drei Schuelern, alle drei sind Empfaenger einer aktiven
+        // Kampagne. Liste wird soft-geloescht — Erwartung: Recipients laufen
+        // unveraendert weiter, Tokens stabil, Statistik-Felder intakt.
+        $students = Student::factory()->count(3)->create();
+        $list = StudentList::create(['name' => 'Geloescht-Test']);
+        $list->allMembers()->attach($students->pluck('id'));
+
+        $campaign = $this->makeCampaign(['status' => 'active']);
+        $campaign->sourceLists()->attach($list->id);
+
+        $recipients = $students->map(fn ($s) => CampaignRecipient::create([
+            'campaign_id' => $campaign->id,
+            'student_id' => $s->id,
+            'status' => 'pending',
+            'initial_sent_at' => now()->subDay(),
+        ]));
+        $originalTokens = $recipients->pluck('token');
+
+        $list->delete();
+
+        // Recipients sind unveraendert
+        $this->assertSame(3, $campaign->recipients()->count());
+        foreach ($recipients as $i => $r) {
+            $fresh = $r->fresh();
+            $this->assertSame($originalTokens[$i], $fresh->token, 'Token darf sich nicht aendern');
+            $this->assertSame('pending', $fresh->status);
+            $this->assertNotNull($fresh->initial_sent_at);
+        }
+
+        // Audit bleibt sichtbar via withTrashed
+        $this->assertSame(
+            [$list->id],
+            $campaign->sourceLists()->withTrashed()->pluck('student_lists.id')->all()
+        );
+
+        // Member-Pivot bleibt — Liste-Restore stellt alles wieder her
+        $this->assertEquals(3, \DB::table('student_list_members')
+            ->where('student_list_id', $list->id)
+            ->count());
+
+        $list->restore();
+        $this->assertEquals(3, $list->fresh()->allMembers()->count());
+    }
+
     public function test_students_export_contains_list_column(): void
     {
         $student = Student::factory()->create();
