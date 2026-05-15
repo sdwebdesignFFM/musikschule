@@ -4,11 +4,15 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\StudentResource\Pages;
 use App\Models\Student;
+use App\Models\StudentList;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 
 class StudentResource extends Resource
 {
@@ -16,13 +20,13 @@ class StudentResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-academic-cap';
 
-    protected static ?string $navigationLabel = 'Empfänger';
+    protected static ?string $navigationLabel = 'Schüler';
 
     protected static ?string $navigationGroup = 'Kampagnen';
 
-    protected static ?string $modelLabel = 'Empfänger';
+    protected static ?string $modelLabel = 'Schüler';
 
-    protected static ?string $pluralModelLabel = 'Empfänger';
+    protected static ?string $pluralModelLabel = 'Schüler';
 
     protected static ?int $navigationSort = 2;
 
@@ -116,6 +120,7 @@ class StudentResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn (Builder $query) => $query->withCount('campaignRecipients'))
             ->columns([
                 Tables\Columns\TextColumn::make('name')
                     ->label('Name')
@@ -155,6 +160,23 @@ class StudentResource extends Resource
                     ->label('Reaktion am')
                     ->getStateUsing(fn (Student $record): ?string => $record->latestResponse()?->responded_at?->format('d.m.Y'))
                     ->placeholder('—'),
+                Tables\Columns\TextColumn::make('campaign_recipients_count')
+                    ->label('In Kampagnen')
+                    ->badge()
+                    ->color(fn (int $state): string => $state > 0 ? 'primary' : 'gray')
+                    ->sortable()
+                    ->url(fn (Student $record): ?string => $record->campaign_recipients_count > 0
+                        ? StudentResource::getUrl('edit', ['record' => $record])
+                        : null
+                    )
+                    ->toggleable(),
+                Tables\Columns\TextColumn::make('studentLists.name')
+                    ->label('Listen')
+                    ->badge()
+                    ->separator(',')
+                    ->color('info')
+                    ->placeholder('—')
+                    ->toggleable(),
             ])
             ->defaultSort('name')
             ->filters([
@@ -188,12 +210,64 @@ class StudentResource extends Resource
                             );
                         }
                     }),
+                Tables\Filters\SelectFilter::make('in_lists')
+                    ->label('In Liste(n)')
+                    ->multiple()
+                    ->options(fn () => StudentList::orderBy('name')->pluck('name', 'id'))
+                    ->query(fn (Builder $query, array $data) =>
+                        empty($data['values']) ? $query :
+                        $query->whereHas('studentLists', fn (Builder $q) =>
+                            $q->whereIn('student_lists.id', $data['values'])
+                        )
+                    ),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([
+                Tables\Actions\BulkAction::make('addToList')
+                    ->label('Zur Liste hinzufügen')
+                    ->icon('heroicon-o-user-plus')
+                    ->color('primary')
+                    ->requiresConfirmation()
+                    ->modalHeading(fn (Collection $records) => $records->count() . ' Schüler zu Liste hinzufügen?')
+                    ->modalDescription('Bereits in der Liste vorhandene Schüler werden automatisch übersprungen.')
+                    ->form(function () {
+                        $listsExist = StudentList::exists();
+
+                        return [
+                            Forms\Components\Placeholder::make('no_lists_hint')
+                                ->label('')
+                                ->content(new \Illuminate\Support\HtmlString(
+                                    'Noch keine Listen vorhanden. <a href="'
+                                    . StudentListResource::getUrl('create')
+                                    . '" target="_blank" class="text-primary-600 underline">Neue Liste anlegen →</a>'
+                                ))
+                                ->visible(! $listsExist),
+                            Forms\Components\Select::make('list_id')
+                                ->label('Liste')
+                                ->options(StudentList::orderBy('name')->pluck('name', 'id'))
+                                ->searchable()
+                                ->required()
+                                ->visible($listsExist),
+                        ];
+                    })
+                    ->action(function (Collection $records, array $data): void {
+                        if (empty($data['list_id'])) {
+                            return;
+                        }
+
+                        $list = StudentList::findOrFail($data['list_id']);
+                        $list->allMembers()->syncWithoutDetaching($records->pluck('id')->all());
+
+                        Notification::make()
+                            ->success()
+                            ->title($records->count() . ' Schüler hinzugefügt')
+                            ->body('Liste „' . $list->name . '"')
+                            ->send();
+                    })
+                    ->deselectRecordsAfterCompletion(),
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),

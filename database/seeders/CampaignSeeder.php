@@ -8,6 +8,7 @@ use App\Models\CampaignEmail;
 use App\Models\CampaignRecipient;
 use App\Models\EmailTemplate;
 use App\Models\Student;
+use App\Models\StudentList;
 use Illuminate\Database\Seeder;
 
 class CampaignSeeder extends Seeder
@@ -91,6 +92,47 @@ class CampaignSeeder extends Seeder
                 'campaign_id' => $campaign->id,
                 'student_id' => $student->id,
             ]);
+        }
+
+        // Zweite Demo-Kampagne, befuellt aus der Liste "Klavierschüler".
+        // Zeigt im Demo-Datenbestand Mehrfach-Teilnahme: dieselben Schüler
+        // sind sowohl in der grossen Vertragsänderung-Kampagne als auch in
+        // dieser kleinen Informations-Kampagne Empfänger.
+        $klavier = StudentList::where('name', 'Klavierschüler')->first();
+        if ($klavier) {
+            $infoCampaign = Campaign::create([
+                'name' => 'Klavierabend 2026 – Einladung (Demo)',
+                'subtitle' => 'Information an Klavierschüler',
+                'description' => '<p>Demo-Kampagne, die zeigt, wie eine Liste als Quelle für mehrere Kampagnen verwendet werden kann.</p>',
+                'document_section_title' => null,
+                'checkbox_text' => 'Ich nehme die Informationen zur Kenntnis.',
+                'accept_text' => 'Ich komme zum Klavierabend',
+                'decline_text' => 'Ich kann leider nicht teilnehmen',
+                'status' => 'draft',
+                'start_date' => now()->format('Y-m-d'),
+                'deadline' => now()->addWeeks(3)->format('Y-m-d'),
+            ]);
+
+            CampaignEmail::create([
+                'campaign_id' => $infoCampaign->id,
+                'type' => 'initial',
+                'subject' => 'Einladung zum Klavierabend 2026',
+                'body' => '<p>Liebe(r) {{name}},</p><p>wir laden Sie herzlich zum Klavierabend am 12.07.2026 ein.</p><p><a href="{{link}}">Hier antworten</a></p>',
+                'delay_days' => 0,
+                'template_id' => $templates['initial']->id ?? null,
+            ]);
+
+            // Audit-Pivot: Kampagne kam aus dieser Liste.
+            $infoCampaign->sourceLists()->attach($klavier->id);
+
+            // Snapshot: aktuelle Liste-Mitglieder als Empfänger anlegen,
+            // soft-deleted Schüler werden defensiv ausgeschlossen.
+            foreach ($klavier->members as $student) {
+                CampaignRecipient::create([
+                    'campaign_id' => $infoCampaign->id,
+                    'student_id' => $student->id,
+                ]);
+            }
         }
     }
 }

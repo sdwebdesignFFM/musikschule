@@ -47,6 +47,7 @@ class CampaignRecipientsExport implements FromQuery, WithHeadings, WithMapping
             'Geöffnet am',
             'Geklickt am',
             'Fehler',
+            'Kampagnen-Quelle(n)',
         ];
     }
 
@@ -66,6 +67,10 @@ class CampaignRecipientsExport implements FromQuery, WithHeadings, WithMapping
             default => 'Ausstehend',
         };
 
+        // Audit-Trail auf Campaign-Ebene: alle Recipients einer Kampagne teilen
+        // sich denselben sourceLists-Wert. Wird einmalig gecached.
+        $sources = $this->sourceListNames();
+
         return [
             $recipient->student?->name ?? '',
             $recipient->student?->customer_number ?? '',
@@ -80,6 +85,21 @@ class CampaignRecipientsExport implements FromQuery, WithHeadings, WithMapping
             $recipient->email_opened_at?->format('d.m.Y H:i') ?? '',
             $recipient->email_clicked_at?->format('d.m.Y H:i') ?? '',
             $recipient->email_error ?? '',
+            $sources,
         ];
+    }
+
+    private ?string $cachedSources = null;
+
+    private function sourceListNames(): string
+    {
+        if ($this->cachedSources !== null) {
+            return $this->cachedSources;
+        }
+
+        return $this->cachedSources = $this->campaign->sourceLists()
+            ->orderBy('name')
+            ->pluck('name')
+            ->implode(', ');
     }
 }

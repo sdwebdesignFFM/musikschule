@@ -21,7 +21,7 @@ class StudentsExport implements FromQuery, WithHeadings, WithMapping
 
     public function query()
     {
-        return $this->query ?? Student::query()->orderBy('name');
+        return ($this->query ?? Student::query()->orderBy('name'))->with('studentLists');
     }
 
     public function headings(): array
@@ -35,6 +35,7 @@ class StudentsExport implements FromQuery, WithHeadings, WithMapping
             'Reaktion am',
             'Bestätigt über',
             'IP-Adresse',
+            'In Listen',
         ];
     }
 
@@ -57,6 +58,7 @@ class StudentsExport implements FromQuery, WithHeadings, WithMapping
             $latest?->responded_at?->format('d.m.Y') ?? '',
             $latest?->responded_via_email ?? '',
             $latest?->ip_address ?? '',
+            $student->studentLists->pluck('name')->implode(', '),
         ];
     }
 }

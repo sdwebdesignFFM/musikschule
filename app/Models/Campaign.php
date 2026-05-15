@@ -103,4 +103,10 @@ class Campaign extends Model
 
         return $this->deadline && $this->deadline->isBefore(now()->startOfDay());
     }
+
+    public function sourceLists(): BelongsToMany
+    {
+        return $this->belongsToMany(StudentList::class, 'campaign_student_list')
+            ->withTimestamps();
+    }
 }

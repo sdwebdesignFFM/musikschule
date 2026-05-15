@@ -4,15 +4,25 @@ namespace App\Filament\Resources\CampaignResource\Pages;
 
 use App\Filament\Resources\CampaignResource;
 use App\Jobs\SendCampaignEmail;
+use App\Models\Campaign;
 use App\Models\CampaignEmail;
 use App\Models\CampaignRecipient;
 use App\Models\Student;
+use App\Services\CampaignRecipientResolver;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
+use Illuminate\Support\HtmlString;
 
 class EditCampaign extends EditRecord
 {
     protected static string $resource = CampaignResource::class;
+
+    protected function resolveRecord(int|string $key): \Illuminate\Database\Eloquent\Model
+    {
+        // valid_recipients_count eager laden, damit Form-Help-Texte keinen
+        // Live-count() pro Render auslösen.
+        return parent::resolveRecord($key)->loadCount('validRecipients');
+    }
 
     protected function mutateFormDataBeforeFill(array $data): array
     {
@@ -29,24 +39,31 @@ class EditCampaign extends EditRecord
             }
         }
 
-        // Empfänger werden im Edit-Modus NICHT als Tags ins Multi-Select
-        // geladen (sonst 2000+ DOM-Nodes). Stattdessen wird nur die Anzahl
-        // angezeigt und das Multi-Select arbeitet additiv.
-        $data['select_all_students'] = false;
+        // Empfänger-Pre-Selection: Listen aus Audit-Pivot vorladen, Schüler-
+        // Selects bewusst leer (additives Verhalten — vermeidet Doppel-Save bei
+        // Re-Save). Mode-Heuristik: wenn Audit-Listen existieren → 'aus_listen',
+        // sonst 'manuell'. 'alle_aktiven' lässt sich nachträglich nicht
+        // verlässlich erkennen — User wechselt das bei Bedarf manuell.
+        $listIds = $campaign->sourceLists()->pluck('student_lists.id')->all();
+        $data['studentListIds'] = $listIds;
         $data['studentIds'] = [];
+        $data['extraStudentIds'] = [];
+        $data['recipient_mode'] = ! empty($listIds) ? 'aus_listen' : 'manuell';
 
         return $data;
     }
 
     protected function mutateFormDataBeforeSave(array $data): array
     {
-        // E-Mail-Felder und Empfänger aus den Kampagnendaten entfernen
+        // E-Mail-Felder und Empfänger-Felder aus den Kampagnendaten entfernen
         unset(
             $data['email_initial_subject'], $data['email_initial_body'],
             $data['email_reminder_1_subject'], $data['email_reminder_1_body'], $data['email_reminder_1_delay_days'],
             $data['email_reminder_2_subject'], $data['email_reminder_2_body'], $data['email_reminder_2_delay_days'],
             $data['studentIds'],
-            $data['select_all_students'],
+            $data['studentListIds'],
+            $data['extraStudentIds'],
+            $data['recipient_mode'],
         );
 
         return $data;
@@ -85,22 +102,26 @@ class EditCampaign extends EditRecord
 
     private function syncRecipients($campaign, array $data): void
     {
-        // Im Edit-Modus arbeitet das Formular additiv:
-        // - studentIds enthält nur NEU hinzuzufügende Schüler
-        // - Bestehende Empfänger werden nie über das Form gelöscht
-        // - Bulk-Operationen (alle hinzufügen / alle entfernen) laufen über
-        //   Header-Actions, nicht über Save.
+        // Edit-Modus arbeitet rein additiv. Selects sind beim Re-Save leer,
+        // bestehende Recipients werden nie über das Form gelöscht (dafür gibt
+        // es die "Alle Empfänger entfernen"-Action). Audit-Pivot ist append-only.
         if (! $campaign->isDraft()) {
             return;
         }
 
-        $newStudentIds = collect($data['studentIds'] ?? []);
-        if ($newStudentIds->isEmpty()) {
+        $resolver = app(CampaignRecipientResolver::class);
+        $resolved = $resolver->resolve($data['recipient_mode'] ?? 'manuell', $data);
+
+        if (! empty($resolved['listIds'])) {
+            $campaign->sourceLists()->syncWithoutDetaching($resolved['listIds']);
+        }
+
+        if ($resolved['ids']->isEmpty()) {
             return;
         }
 
-        $existingStudentIds = $campaign->recipients()->pluck('student_id');
-        $toAdd = $newStudentIds->diff($existingStudentIds);
+        $existing = $campaign->recipients()->pluck('student_id');
+        $toAdd = $resolved['ids']->diff($existing);
 
         foreach ($toAdd as $studentId) {
             CampaignRecipient::create([
@@ -131,7 +152,7 @@ class EditCampaign extends EditRecord
                 ->color('success')
                 ->requiresConfirmation()
                 ->modalHeading('Kampagne starten')
-                ->modalDescription('Sind Sie sicher? Alle Erst-Mails werden sofort an die Empfänger versendet.')
+                ->modalDescription(fn (): HtmlString => CampaignResource::buildStartModalDescription($this->record))
                 ->modalSubmitActionLabel('Ja, Kampagne starten')
                 ->visible(fn (): bool => $this->record->isDraft())
                 ->action(function (): void {

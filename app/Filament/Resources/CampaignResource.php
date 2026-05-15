@@ -7,6 +7,7 @@ use App\Jobs\SendCampaignEmail;
 use App\Models\Campaign;
 use App\Models\CampaignRecipient;
 use App\Models\Student;
+use App\Models\StudentList;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -14,6 +15,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\HtmlString;
 
 class CampaignResource extends Resource
 {
@@ -126,116 +128,107 @@ class CampaignResource extends Resource
 
                 // Sektion 6: Empfänger
                 Forms\Components\Section::make('Empfänger')
-                    ->description('Wählen Sie die Schüler aus, die diese Kampagne erhalten sollen.')
+                    ->description(new HtmlString(
+                        '<div class="flex items-start gap-2 text-sm text-warning-700">'
+                        . '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-4 h-4 mt-0.5 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 12.75v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg>'
+                        . '<span>Empfänger werden beim Speichern fixiert (Snapshot). Spätere Listen-Änderungen wirken sich nur auf neue Kampagnen aus.</span>'
+                        . '</div>'
+                    ))
                     ->schema([
                         // ----- Locked-Info: laufende/abgeschlossene Kampagnen -----
                         Forms\Components\Placeholder::make('recipients_locked_info')
                             ->label('')
                             ->content(fn ($record) =>
-                                "Diese Kampagne hat {$record->validRecipients()->count()} Empfänger. Die Empfänger-Liste kann nur im Entwurf-Status bearbeitet werden."
+                                "Diese Kampagne hat {$record->valid_recipients_count} Empfänger. Die Empfänger-Liste kann nur im Entwurf-Status bearbeitet werden."
                             )
                             ->visible(fn ($record): bool => $record && ! $record->isDraft()),
 
-                        // ----- Create-Modus: Toggle "Alle wählen" -----
-                        Forms\Components\Toggle::make('select_all_students')
-                            ->label('Alle aktiven Schüler auswählen')
-                            ->live()
-                            ->afterStateUpdated(fn (Forms\Set $set) => $set('studentIds', []))
-                            ->visible(fn ($record): bool => ! $record),
-                        Forms\Components\Placeholder::make('student_count_info')
-                            ->label('')
-                            ->content(fn () => Student::where('active', true)->count() . ' aktive Schüler werden als Empfänger hinzugefügt.')
-                            ->visible(fn ($record, Forms\Get $get): bool => ! $record && (bool) $get('select_all_students')),
-
-                        // ----- Edit-Draft: aktuelle Anzahl + additive Bearbeitung -----
+                        // ----- Edit-Draft: aktuelle Anzahl + Hinweis-Banner -----
                         Forms\Components\Placeholder::make('current_recipients_info')
                             ->label('Aktueller Stand')
                             ->content(function ($record) {
-                                $count = $record->validRecipients()->count();
+                                $count = $record->valid_recipients_count ?? $record->validRecipients()->count();
                                 return $count === 0
                                     ? 'Noch keine Empfänger zugewiesen.'
                                     : "{$count} Empfänger zugewiesen.";
                             })
                             ->visible(fn ($record): bool => $record && $record->isDraft()),
 
-                        // Inline-Buttons direkt in der Section, damit sie nicht
-                        // im Page-Header übersehen werden.
-                        Forms\Components\Actions::make([
-                            Forms\Components\Actions\Action::make('addAllActiveStudents')
-                                ->label('Alle aktiven Schüler hinzufügen')
-                                ->icon('heroicon-o-user-plus')
-                                ->color('primary')
-                                ->requiresConfirmation()
-                                ->modalHeading('Alle aktiven Schüler hinzufügen')
-                                ->modalDescription(function ($record) {
-                                    $active = Student::where('active', true)->count();
-                                    $existing = $record->recipients()->pluck('student_id');
-                                    $toAdd = Student::where('active', true)
-                                        ->whereNotIn('id', $existing)
-                                        ->count();
-                                    return "Aktuell aktiv: {$active} Schüler. Davon werden {$toAdd} neu hinzugefügt (bereits zugewiesene werden nicht doppelt angelegt).";
-                                })
-                                ->modalSubmitActionLabel('Ja, hinzufügen')
-                                ->action(function ($record, $livewire) {
-                                    $existing = $record->recipients()->pluck('student_id');
-                                    $toAdd = Student::where('active', true)
-                                        ->whereNotIn('id', $existing)
-                                        ->pluck('id');
-
-                                    // Eine Transaktion für 2000+ Inserts spart
-                                    // den Commit-Overhead pro Row. CampaignRecipient::create
-                                    // bleibt nötig, damit der creating()-Hook
-                                    // token + tracking_id generiert.
-                                    DB::transaction(function () use ($toAdd, $record) {
-                                        foreach ($toAdd as $studentId) {
-                                            CampaignRecipient::create([
-                                                'campaign_id' => $record->id,
-                                                'student_id' => $studentId,
-                                            ]);
-                                        }
-                                    });
-
-                                    \Filament\Notifications\Notification::make()
-                                        ->success()
-                                        ->title('Schüler hinzugefügt')
-                                        ->body("{$toAdd->count()} neue Empfänger wurden hinzugefügt.")
-                                        ->send();
-
-                                    $livewire->refreshFormData(['current_recipients_info']);
-                                }),
-                            Forms\Components\Actions\Action::make('removeAllRecipients')
-                                ->label('Alle Empfänger entfernen')
-                                ->icon('heroicon-o-trash')
-                                ->color('danger')
-                                ->requiresConfirmation()
-                                ->modalHeading('Alle Empfänger entfernen')
-                                ->modalDescription(function ($record) {
-                                    $count = $record->validRecipients()->count();
-                                    return "Es werden {$count} Empfänger aus dieser Kampagne entfernt. Diese Aktion kann nicht rückgängig gemacht werden.";
-                                })
-                                ->modalSubmitActionLabel('Ja, alle entfernen')
-                                ->visible(fn ($record): bool => $record && $record->recipients()->exists())
-                                ->action(function ($record, $livewire) {
-                                    $count = $record->validRecipients()->count();
-                                    $record->recipients()->delete();
-
-                                    \Filament\Notifications\Notification::make()
-                                        ->warning()
-                                        ->title('Empfänger entfernt')
-                                        ->body("{$count} Empfänger wurden aus der Kampagne entfernt.")
-                                        ->send();
-
-                                    $livewire->refreshFormData(['current_recipients_info']);
-                                }),
-                        ])
-                            ->visible(fn ($record): bool => $record && $record->isDraft()),
-
-                        Forms\Components\Placeholder::make('add_recipients_hint')
+                        Forms\Components\Placeholder::make('edit_additive_banner')
                             ->label('')
-                            ->content('Für einzelne Ergänzungen nutzen Sie die Suche unten.')
-                            ->visible(fn ($record): bool => $record && $record->isDraft()),
+                            ->content(new HtmlString(
+                                '<div class="rounded-lg bg-info-50 px-4 py-3 text-sm text-info-700">'
+                                . 'Speichern fügt nur fehlende Schüler hinzu. Bereits vorhandene Empfänger bleiben unverändert. '
+                                . 'Listen aus der Auswahl zu entfernen <strong>löscht keine bestehenden Empfänger</strong> &mdash; '
+                                . 'dafür gibt es die Aktion „Alle Empfänger entfernen" weiter unten.'
+                                . '</div>'
+                            ))
+                            ->visible(fn ($record): bool => $record && $record->isDraft() && $record->recipients()->exists()),
 
-                        // ----- Multi-Select: im Create ODER Edit-Draft, immer leer/additiv -----
+                        // ----- Mode-Switch: ToggleButtons (Create + Edit-Draft) -----
+                        Forms\Components\ToggleButtons::make('recipient_mode')
+                            ->label('Empfänger-Quelle')
+                            ->options([
+                                'alle_aktiven' => 'Alle aktiven Schüler',
+                                'aus_listen'   => 'Aus Liste(n)',
+                                'manuell'      => 'Manuelle Auswahl',
+                            ])
+                            ->icons([
+                                'alle_aktiven' => 'heroicon-o-users',
+                                'aus_listen'   => 'heroicon-o-user-group',
+                                'manuell'      => 'heroicon-o-cursor-arrow-rays',
+                            ])
+                            ->colors([
+                                'alle_aktiven' => 'primary',
+                                'aus_listen'   => 'success',
+                                'manuell'      => 'warning',
+                            ])
+                            ->default('manuell')
+                            ->inline()
+                            ->live()
+                            ->visible(fn ($record): bool => ! $record || $record->isDraft()),
+
+                        // Modus „Alle aktiven" — Vorschau
+                        Forms\Components\Placeholder::make('all_active_preview')
+                            ->label('Vorschau')
+                            ->content(fn () => Student::where('active', true)->count() . ' aktive Schüler werden als Empfänger hinzugefügt.')
+                            ->visible(fn (Forms\Get $get, $record): bool =>
+                                (! $record || $record->isDraft()) && $get('recipient_mode') === 'alle_aktiven'
+                            ),
+
+                        // Modus „Aus Listen"
+                        Forms\Components\Select::make('studentListIds')
+                            ->label('Listen')
+                            ->multiple()
+                            ->options(fn () => StudentList::orderBy('name')->pluck('name', 'id'))
+                            ->searchable()
+                            ->preload()
+                            ->helperText('Aktuelle Mitglieder werden als Empfänger eingefroren.')
+                            ->visible(fn (Forms\Get $get, $record): bool =>
+                                (! $record || $record->isDraft()) && $get('recipient_mode') === 'aus_listen'
+                            )
+                            ->columnSpanFull(),
+
+                        Forms\Components\Select::make('extraStudentIds')
+                            ->label('Plus weitere Einzelschüler (optional)')
+                            ->multiple()
+                            ->getSearchResultsUsing(fn (string $search) => Student::where('active', true)
+                                ->where(fn ($q) => $q
+                                    ->where('name', 'like', "%{$search}%")
+                                    ->orWhere('customer_number', 'like', "%{$search}%"))
+                                ->limit(50)
+                                ->get()
+                                ->mapWithKeys(fn ($s) => [$s->id => "{$s->name} ({$s->customer_number})"]))
+                            ->getOptionLabelsUsing(fn (array $values) => Student::whereIn('id', $values)
+                                ->get()
+                                ->mapWithKeys(fn ($s) => [$s->id => "{$s->name} ({$s->customer_number})"]))
+                            ->searchable()
+                            ->visible(fn (Forms\Get $get, $record): bool =>
+                                (! $record || $record->isDraft()) && $get('recipient_mode') === 'aus_listen'
+                            )
+                            ->columnSpanFull(),
+
+                        // Modus „Manuell"
                         Forms\Components\Select::make('studentIds')
                             ->label(fn ($record) => $record ? 'Schüler hinzufügen' : 'Schüler auswählen')
                             ->multiple()
@@ -250,15 +243,38 @@ class CampaignResource extends Resource
                                 ->get()
                                 ->mapWithKeys(fn ($s) => [$s->id => "{$s->name} ({$s->customer_number})"]))
                             ->searchable()
-                            ->visible(function ($record, Forms\Get $get) {
-                                // Create: nur wenn Toggle aus
-                                if (! $record) {
-                                    return ! $get('select_all_students');
-                                }
-                                // Edit: nur im Draft
-                                return $record->isDraft();
-                            })
+                            ->visible(fn (Forms\Get $get, $record): bool =>
+                                (! $record || $record->isDraft()) && $get('recipient_mode') === 'manuell'
+                            )
                             ->columnSpanFull(),
+
+                        // „Alle Empfänger entfernen" bleibt als Cleanup-Action im Edit-Draft erhalten.
+                        Forms\Components\Actions::make([
+                            Forms\Components\Actions\Action::make('removeAllRecipients')
+                                ->label('Alle Empfänger entfernen')
+                                ->icon('heroicon-o-trash')
+                                ->color('danger')
+                                ->requiresConfirmation()
+                                ->modalHeading('Alle Empfänger entfernen')
+                                ->modalDescription(function ($record) {
+                                    $count = $record->validRecipients()->count();
+                                    return "Es werden {$count} Empfänger aus dieser Kampagne entfernt. Diese Aktion kann nicht rückgängig gemacht werden.";
+                                })
+                                ->modalSubmitActionLabel('Ja, alle entfernen')
+                                ->action(function ($record, $livewire) {
+                                    $count = $record->validRecipients()->count();
+                                    $record->recipients()->delete();
+
+                                    \Filament\Notifications\Notification::make()
+                                        ->warning()
+                                        ->title('Empfänger entfernt')
+                                        ->body("{$count} Empfänger wurden aus der Kampagne entfernt.")
+                                        ->send();
+
+                                    $livewire->refreshFormData(['current_recipients_info', 'edit_additive_banner']);
+                                }),
+                        ])
+                            ->visible(fn ($record): bool => $record && $record->isDraft() && $record->recipients()->exists()),
                     ]),
             ]);
     }
@@ -380,10 +396,7 @@ class CampaignResource extends Resource
                     ->modalIcon('heroicon-o-play')
                     ->modalIconColor('success')
                     ->modalHeading('Kampagne starten')
-                    ->modalDescription(function (Campaign $record): string {
-                        $count = $record->validRecipients()->where('status', 'pending')->count();
-                        return "Diese Kampagne wird an {$count} Empfänger versendet.";
-                    })
+                    ->modalDescription(fn (Campaign $record): HtmlString => self::buildStartModalDescription($record))
                     ->modalSubmitActionLabel('Ja, Kampagne starten')
                     ->visible(fn (Campaign $record): bool => $record->isDraft())
                     ->action(function (Campaign $record): void {
@@ -621,6 +634,41 @@ class CampaignResource extends Resource
         }
 
         return $recipients->count();
+    }
+
+    /**
+     * Modal-Beschreibung der "Starten"-Action: Anzahl-Zeile (aus ef7f92b) bleibt,
+     * Mehrfach-Teilnahme-Warnung erscheint nur wenn relevant.
+     */
+    public static function buildStartModalDescription(Campaign $record): HtmlString
+    {
+        $count = $record->validRecipients()->where('status', 'pending')->count();
+        $intro = "Diese Kampagne wird an <strong>{$count}</strong> Empfänger versendet.";
+
+        $recent = self::countRecentlyContactedRecipients($record);
+        $warning = $recent > 0
+            ? '<p class="mt-2 text-warning-600"><strong>⚠️ ' . $recent . '</strong> davon haben in den letzten 7 Tagen bereits Mails aus anderen Kampagnen erhalten.</p>'
+            : '';
+
+        return new HtmlString("<p>{$intro}</p>{$warning}");
+    }
+
+    /**
+     * Flacher Subquery-Join für die Pre-Send-Warnung. Schneller als doppeltes
+     * whereHas. Zählt distinct Empfänger, die in den letzten 7 Tagen aus einer
+     * anderen Kampagne eine Initial-Mail bekommen haben.
+     */
+    public static function countRecentlyContactedRecipients(Campaign $record): int
+    {
+        return DB::table('campaign_recipients as cr1')
+            ->join('campaign_recipients as cr2', 'cr2.student_id', '=', 'cr1.student_id')
+            ->where('cr1.campaign_id', $record->id)
+            ->where('cr1.status', 'pending')
+            ->where('cr2.campaign_id', '!=', $record->id)
+            ->whereNotNull('cr2.initial_sent_at')
+            ->where('cr2.initial_sent_at', '>=', now()->subDays(7))
+            ->distinct()
+            ->count('cr1.student_id');
     }
 
     public static function getRelations(): array

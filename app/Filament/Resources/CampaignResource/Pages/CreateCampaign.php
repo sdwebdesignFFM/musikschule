@@ -6,6 +6,7 @@ use App\Filament\Resources\CampaignResource;
 use App\Models\CampaignEmail;
 use App\Models\CampaignRecipient;
 use App\Models\Student;
+use App\Services\CampaignRecipientResolver;
 use Filament\Resources\Pages\CreateRecord;
 
 class CreateCampaign extends CreateRecord
@@ -16,13 +17,15 @@ class CreateCampaign extends CreateRecord
     {
         $data['status'] = 'draft';
 
-        // E-Mail-Felder aus dem Formular entfernen (werden separat gespeichert)
+        // E-Mail- und Empfänger-Felder aus dem Formular entfernen (separat behandelt).
         unset(
             $data['email_initial_subject'], $data['email_initial_body'],
             $data['email_reminder_1_subject'], $data['email_reminder_1_body'], $data['email_reminder_1_delay_days'],
             $data['email_reminder_2_subject'], $data['email_reminder_2_body'], $data['email_reminder_2_delay_days'],
             $data['studentIds'],
-            $data['select_all_students'],
+            $data['studentListIds'],
+            $data['extraStudentIds'],
+            $data['recipient_mode'],
         );
 
         return $data;
@@ -60,13 +63,18 @@ class CreateCampaign extends CreateRecord
 
     private function saveRecipients($campaign, array $data): void
     {
-        if (!empty($data['select_all_students'])) {
-            $studentIds = Student::where('active', true)->pluck('id');
-        } else {
-            $studentIds = collect($data['studentIds'] ?? []);
+        $resolver = app(CampaignRecipientResolver::class);
+        $resolved = $resolver->resolve($data['recipient_mode'] ?? 'manuell', $data);
+
+        if (! empty($resolved['listIds'])) {
+            // Audit-Pivot append-only: niemals alte Audit-Einträge entfernen.
+            $campaign->sourceLists()->syncWithoutDetaching($resolved['listIds']);
         }
 
-        foreach ($studentIds as $studentId) {
+        $existing = $campaign->recipients()->pluck('student_id');
+        $toAdd = $resolved['ids']->diff($existing);
+
+        foreach ($toAdd as $studentId) {
             CampaignRecipient::create([
                 'campaign_id' => $campaign->id,
                 'student_id' => $studentId,

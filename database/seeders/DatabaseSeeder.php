@@ -25,6 +25,7 @@ class DatabaseSeeder extends Seeder
 
         $this->call([
             StudentSeeder::class,
+            StudentListSeeder::class,
             EmailTemplateSeeder::class,
             CampaignSeeder::class,
             PageSeeder::class,

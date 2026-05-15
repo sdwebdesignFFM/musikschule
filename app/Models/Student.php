@@ -56,6 +56,12 @@ class Student extends Model
             ->withTimestamps();
     }
 
+    public function studentLists(): BelongsToMany
+    {
+        return $this->belongsToMany(StudentList::class, 'student_list_members')
+            ->withTimestamps();
+    }
+
     public function getSalutationAttribute(): string
     {
         return 'Guten Tag';
