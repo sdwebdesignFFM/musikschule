@@ -182,33 +182,6 @@ class StudentListFlowTest extends TestCase
         $this->assertSame([$list->id], $campaign->sourceLists()->pluck('student_lists.id')->all());
     }
 
-    public function test_create_campaign_alle_aktiven_takes_only_active_students(): void
-    {
-        Student::factory()->count(3)->create(['active' => true]);
-        Student::factory()->count(2)->create(['active' => false]);
-
-        Livewire::test(CreateCampaign::class)
-            ->fillForm([
-                'name' => 'Alle aktiven',
-                'start_date' => now()->toDateString(),
-                'deadline' => now()->addWeeks(4)->toDateString(),
-                'recipient_mode' => 'alle_aktiven',
-                'email_initial_subject' => 'S',
-                'email_initial_body' => '<p>B</p>',
-                'email_reminder_1_subject' => 'R1',
-                'email_reminder_1_body' => '<p>R1</p>',
-                'email_reminder_1_delay_days' => 7,
-                'email_reminder_2_subject' => 'R2',
-                'email_reminder_2_body' => '<p>R2</p>',
-                'email_reminder_2_delay_days' => 14,
-            ])
-            ->call('create')
-            ->assertHasNoFormErrors();
-
-        $campaign = Campaign::where('name', 'Alle aktiven')->firstOrFail();
-        $this->assertSame(3, $campaign->recipients()->count());
-    }
-
     public function test_create_campaign_manuell_persists_only_picked_students(): void
     {
         $students = Student::factory()->count(4)->create();

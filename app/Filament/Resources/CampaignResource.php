@@ -169,32 +169,21 @@ class CampaignResource extends Resource
                         Forms\Components\ToggleButtons::make('recipient_mode')
                             ->label('Empfänger-Quelle')
                             ->options([
-                                'alle_aktiven' => 'Alle aktiven Schüler',
-                                'aus_listen'   => 'Aus Liste(n)',
-                                'manuell'      => 'Manuelle Auswahl',
+                                'aus_listen' => 'Aus Liste(n)',
+                                'manuell'    => 'Manuelle Auswahl',
                             ])
                             ->icons([
-                                'alle_aktiven' => 'heroicon-o-users',
-                                'aus_listen'   => 'heroicon-o-user-group',
-                                'manuell'      => 'heroicon-o-cursor-arrow-rays',
+                                'aus_listen' => 'heroicon-o-user-group',
+                                'manuell'    => 'heroicon-o-cursor-arrow-rays',
                             ])
                             ->colors([
-                                'alle_aktiven' => 'primary',
-                                'aus_listen'   => 'success',
-                                'manuell'      => 'warning',
+                                'aus_listen' => 'success',
+                                'manuell'    => 'warning',
                             ])
-                            ->default('manuell')
+                            ->default('aus_listen')
                             ->inline()
                             ->live()
                             ->visible(fn ($record): bool => ! $record || $record->isDraft()),
-
-                        // Modus „Alle aktiven" — Vorschau
-                        Forms\Components\Placeholder::make('all_active_preview')
-                            ->label('Vorschau')
-                            ->content(fn () => Student::where('active', true)->count() . ' aktive Schüler werden als Empfänger hinzugefügt.')
-                            ->visible(fn (Forms\Get $get, $record): bool =>
-                                (! $record || $record->isDraft()) && $get('recipient_mode') === 'alle_aktiven'
-                            ),
 
                         // Modus „Aus Listen"
                         Forms\Components\Select::make('studentListIds')
