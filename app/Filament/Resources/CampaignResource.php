@@ -380,7 +380,10 @@ class CampaignResource extends Resource
                     ->modalIcon('heroicon-o-play')
                     ->modalIconColor('success')
                     ->modalHeading('Kampagne starten')
-                    ->modalDescription('Sind Sie sicher? Alle Erst-Mails werden sofort an die Empfänger versendet. Diese Aktion kann nicht rückgängig gemacht werden.')
+                    ->modalDescription(function (Campaign $record): string {
+                        $count = $record->validRecipients()->where('status', 'pending')->count();
+                        return "Diese Kampagne wird an {$count} Empfänger versendet.";
+                    })
                     ->modalSubmitActionLabel('Ja, Kampagne starten')
                     ->visible(fn (Campaign $record): bool => $record->isDraft())
                     ->action(function (Campaign $record): void {
