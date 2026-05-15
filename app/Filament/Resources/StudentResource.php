@@ -75,7 +75,6 @@ class StudentResource extends Resource
                             ->placeholder('Keine Liste zugewiesen')
                             ->columnSpanFull(),
                     ])
-                    ->visible(fn ($record) => $record !== null)
                     ->collapsible(),
 
                 Forms\Components\Section::make('Kampagnen-Rückmeldungen')

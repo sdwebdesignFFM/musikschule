@@ -8,6 +8,7 @@ use App\Filament\Resources\StudentListResource\Pages\CreateStudentList;
 use App\Filament\Resources\StudentListResource\Pages\EditStudentList;
 use App\Filament\Resources\StudentListResource\Pages\ListStudentLists;
 use App\Filament\Resources\StudentListResource\RelationManagers\MembersRelationManager;
+use App\Filament\Resources\StudentResource\Pages\CreateStudent;
 use App\Filament\Resources\StudentResource\Pages\EditStudent;
 use App\Filament\Resources\StudentResource\Pages\ListStudents;
 use App\Models\Campaign;
@@ -306,6 +307,47 @@ class StudentListFlowTest extends TestCase
             ->assertHasNoFormErrors();
 
         $this->assertSame(3, $campaign->fresh()->recipients()->count());
+    }
+
+    // ---- Schueler-Create: Listen-Zuweisung beim Anlegen ----
+
+    public function test_student_create_page_can_assign_lists_immediately(): void
+    {
+        $a = StudentList::create(['name' => 'Klavier']);
+        $b = StudentList::create(['name' => 'Geige']);
+
+        Livewire::test(CreateStudent::class)
+            ->fillForm([
+                'customer_number' => 'MS-7001',
+                'name' => 'Direkt Zugewiesen',
+                'email' => 'direkt@test.de',
+                'active' => true,
+                'studentLists' => [$a->id, $b->id],
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $student = Student::where('customer_number', 'MS-7001')->firstOrFail();
+        $this->assertEqualsCanonicalizing(
+            [$a->id, $b->id],
+            $student->studentLists()->pluck('student_lists.id')->all()
+        );
+    }
+
+    public function test_student_create_page_works_without_list_selection(): void
+    {
+        Livewire::test(CreateStudent::class)
+            ->fillForm([
+                'customer_number' => 'MS-7002',
+                'name' => 'Ohne Liste',
+                'email' => 'ohne@test.de',
+                'active' => true,
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $student = Student::where('customer_number', 'MS-7002')->firstOrFail();
+        $this->assertSame(0, $student->studentLists()->count());
     }
 
     // ---- Schueler-Detail: Listen-Mitgliedschaft ----
