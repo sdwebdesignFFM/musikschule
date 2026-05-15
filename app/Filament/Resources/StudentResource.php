@@ -138,10 +138,7 @@ class StudentResource extends Resource
                 Tables\Columns\TextColumn::make('latestRecipient.status')
                     ->label('Status')
                     ->badge()
-                    ->getStateUsing(function (Student $record): ?string {
-                        $latest = $record->campaignRecipients()->latest('updated_at')->first();
-                        return $latest?->status;
-                    })
+                    ->getStateUsing(fn (Student $record): ?string => $record->latestResponse()?->status ?? 'pending')
                     ->formatStateUsing(fn (?string $state): string => match ($state) {
                         'accepted' => 'Angenommen',
                         'declined' => 'Gekündigt',
@@ -156,10 +153,7 @@ class StudentResource extends Resource
                     }),
                 Tables\Columns\TextColumn::make('latestRecipient.responded_at')
                     ->label('Reaktion am')
-                    ->getStateUsing(function (Student $record): ?string {
-                        $latest = $record->campaignRecipients()->latest('updated_at')->first();
-                        return $latest?->responded_at?->format('d.m.Y');
-                    })
+                    ->getStateUsing(fn (Student $record): ?string => $record->latestResponse()?->responded_at?->format('d.m.Y'))
                     ->placeholder('—'),
             ])
             ->defaultSort('name')
@@ -177,11 +171,21 @@ class StudentResource extends Resource
                         'pending' => 'Ausstehend',
                     ])
                     ->query(function ($query, array $data) {
-                        if (filled($data['value'])) {
-                            $query->whereHas('campaignRecipients', fn ($q) => $q->where('status', $data['value'])
-                                ->whereIn('id', function ($sub) {
-                                    $sub->selectRaw('MAX(id)')->from('campaign_recipients')->groupBy('student_id');
-                                }));
+                        if (! filled($data['value'])) {
+                            return;
+                        }
+                        if ($data['value'] === 'pending') {
+                            // Ausstehend = es gibt keinerlei accepted/declined-Antwort
+                            // in einer noch existierenden Kampagne.
+                            $query->whereDoesntHave('campaignRecipients', fn ($q) =>
+                                $q->whereIn('status', ['accepted', 'declined'])
+                                    ->whereHas('campaign')
+                            );
+                        } else {
+                            $query->whereHas('campaignRecipients', fn ($q) =>
+                                $q->where('status', $data['value'])
+                                    ->whereHas('campaign')
+                            );
                         }
                     }),
             ])

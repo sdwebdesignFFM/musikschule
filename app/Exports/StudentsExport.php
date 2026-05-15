@@ -40,13 +40,12 @@ class StudentsExport implements FromQuery, WithHeadings, WithMapping
 
     public function map($student): array
     {
-        $latest = $student->campaignRecipients()->latest('updated_at')->first();
+        $latest = $student->latestResponse();
 
         $status = match ($latest?->status) {
             'accepted' => 'Angenommen',
             'declined' => 'Gekündigt',
-            'pending' => 'Ausstehend',
-            default => '',
+            default => 'Ausstehend',
         };
 
         return [

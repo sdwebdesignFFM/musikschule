@@ -189,6 +189,15 @@ class ViewCampaignStatistics extends Page implements HasTable
     protected function getHeaderActions(): array
     {
         return [
+            Actions\Action::make('export')
+                ->label('Excel-Export')
+                ->icon('heroicon-o-arrow-down-tray')
+                ->color('primary')
+                ->action(function () {
+                    $slug = \Illuminate\Support\Str::slug($this->record->name) ?: 'kampagne-' . $this->record->id;
+                    $filename = 'statistik-' . $slug . '-' . now()->format('Y-m-d') . '.xlsx';
+                    return (new \App\Exports\CampaignRecipientsExport($this->record))->download($filename);
+                }),
             Actions\Action::make('back')
                 ->label('Zurück zur Kampagne')
                 ->icon('heroicon-o-arrow-left')

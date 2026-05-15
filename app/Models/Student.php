@@ -33,6 +33,22 @@ class Student extends Model
         return $this->hasMany(CampaignRecipient::class);
     }
 
+    /**
+     * Die zuletzt vom Schüler abgegebene Rückmeldung (accepted/declined) — über alle
+     * nicht soft-gelöschten Kampagnen hinweg. Wird in Listen/Exports verwendet, weil
+     * eine spätere pending-Zeile aus einer versehentlich versendeten oder gelöschten
+     * Kampagne sonst eine echte frühere Antwort verdecken würde.
+     */
+    public function latestResponse(): ?CampaignRecipient
+    {
+        return $this->campaignRecipients()
+            ->whereIn('status', ['accepted', 'declined'])
+            ->whereHas('campaign')
+            ->orderByDesc('responded_at')
+            ->orderByDesc('id')
+            ->first();
+    }
+
     public function campaigns(): BelongsToMany
     {
         return $this->belongsToMany(Campaign::class, 'campaign_recipients')
