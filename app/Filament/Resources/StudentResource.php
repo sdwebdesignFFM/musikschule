@@ -85,6 +85,7 @@ class StudentResource extends Resource
                                 if (!$record) return 'Noch keine Rückmeldungen.';
 
                                 $recipients = $record->campaignRecipients()
+                                    ->whereHas('campaign')
                                     ->with('campaign')
                                     ->latest('updated_at')
                                     ->get();
@@ -134,7 +135,9 @@ class StudentResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn (Builder $query) => $query->withCount('campaignRecipients'))
+            ->modifyQueryUsing(fn (Builder $query) => $query->withCount([
+                'campaignRecipients' => fn ($q) => $q->whereHas('campaign'),
+            ]))
             ->columns([
                 Tables\Columns\TextColumn::make('name')
                     ->label('Name')
@@ -154,26 +157,6 @@ class StudentResource extends Resource
                     ->label('Kassenzeichen')
                     ->searchable()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('latestRecipient.status')
-                    ->label('Status')
-                    ->badge()
-                    ->getStateUsing(fn (Student $record): ?string => $record->latestResponse()?->status ?? 'pending')
-                    ->formatStateUsing(fn (?string $state): string => match ($state) {
-                        'accepted' => 'Angenommen',
-                        'declined' => 'Gekündigt',
-                        'pending' => 'Ausstehend',
-                        default => '—',
-                    })
-                    ->color(fn (?string $state): string => match ($state) {
-                        'accepted' => 'success',
-                        'declined' => 'danger',
-                        'pending' => 'warning',
-                        default => 'gray',
-                    }),
-                Tables\Columns\TextColumn::make('latestRecipient.responded_at')
-                    ->label('Reaktion am')
-                    ->getStateUsing(fn (Student $record): ?string => $record->latestResponse()?->responded_at?->format('d.m.Y'))
-                    ->placeholder('—'),
                 Tables\Columns\TextColumn::make('campaign_recipients_count')
                     ->label('In Kampagnen')
                     ->badge()

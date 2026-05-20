@@ -52,7 +52,7 @@ class ViewCampaignStatistics extends Page implements HasTable
                     ->orWhere('email_2_sent', true);
             })
             ->count();
-        $pending = (clone $recipients)
+        $sendPending = (clone $recipients)
             ->whereIn('email_status', ['pending', 'sending'])
             ->where('email_1_sent', false)
             ->where('email_2_sent', false)
@@ -65,16 +65,18 @@ class ViewCampaignStatistics extends Page implements HasTable
             ->count();
         $accepted = (clone $recipients)->where('status', 'accepted')->count();
         $declined = (clone $recipients)->where('status', 'declined')->count();
+        $responsePending = (clone $recipients)->where('status', 'pending')->count();
         $opened = (clone $recipients)->whereNotNull('email_opened_at')->count();
         $clicked = (clone $recipients)->whereNotNull('email_clicked_at')->count();
 
         return [
             ['label' => 'Gesamt', 'value' => $total, 'color' => 'gray', 'icon' => 'heroicon-o-users'],
             ['label' => 'Versendet', 'value' => $sent, 'color' => 'success', 'icon' => 'heroicon-o-paper-airplane'],
-            ['label' => 'Ausstehend', 'value' => $pending, 'color' => 'warning', 'icon' => 'heroicon-o-clock'],
+            ['label' => 'E-Mail-Versand offen', 'value' => $sendPending, 'color' => 'warning', 'icon' => 'heroicon-o-clock'],
             ['label' => 'Fehlgeschlagen', 'value' => $failed, 'color' => 'danger', 'icon' => 'heroicon-o-exclamation-triangle'],
             ['label' => 'Zugestimmt', 'value' => $accepted, 'color' => 'success', 'icon' => 'heroicon-o-check-circle'],
             ['label' => 'Abgelehnt', 'value' => $declined, 'color' => 'danger', 'icon' => 'heroicon-o-x-circle'],
+            ['label' => 'Antwort offen', 'value' => $responsePending, 'color' => 'warning', 'icon' => 'heroicon-o-question-mark-circle'],
             ['label' => 'Geöffnet', 'value' => $opened, 'color' => 'info', 'icon' => 'heroicon-o-envelope-open'],
             ['label' => 'Geklickt', 'value' => $clicked, 'color' => 'info', 'icon' => 'heroicon-o-cursor-arrow-rays'],
         ];

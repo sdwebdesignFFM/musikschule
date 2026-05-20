@@ -1,6 +1,6 @@
 <x-filament-panels::page>
     {{-- Stats Cards --}}
-    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem;">
         @foreach ($this->getStats() as $stat)
             <div class="fi-section rounded-xl bg-white shadow-sm ring-1 ring-gray-950/5 dark:bg-gray-900 dark:ring-white/10">
                 <div style="display: flex; align-items: center; gap: 0.75rem; padding: 1rem;">
