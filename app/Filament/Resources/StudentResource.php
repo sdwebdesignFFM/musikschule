@@ -99,12 +99,14 @@ class StudentResource extends Resource
                                         'pending' => '<span style="color:#F59E0B;font-weight:600">Ausstehend</span>',
                                         default => '—',
                                     };
+                                    $sent = $r->initial_sent_at?->format('d.m.Y H:i') ?? '—';
                                     $date = $r->responded_at?->format('d.m.Y H:i') ?? '—';
                                     $ip = $r->ip_address ?? '—';
                                     $campaign = e($r->campaign->name ?? '—');
 
                                     return "<tr>
                                         <td style='padding:8px 12px;border-bottom:1px solid #e5e7eb'>{$campaign}</td>
+                                        <td style='padding:8px 12px;border-bottom:1px solid #e5e7eb'>{$sent}</td>
                                         <td style='padding:8px 12px;border-bottom:1px solid #e5e7eb'>{$status}</td>
                                         <td style='padding:8px 12px;border-bottom:1px solid #e5e7eb'>{$date}</td>
                                         <td style='padding:8px 12px;border-bottom:1px solid #e5e7eb'>{$ip}</td>
@@ -116,6 +118,7 @@ class StudentResource extends Resource
                                         <thead>
                                             <tr style='text-align:left;border-bottom:2px solid #d1d5db'>
                                                 <th style='padding:8px 12px'>Kampagne</th>
+                                                <th style='padding:8px 12px'>Versendet am</th>
                                                 <th style='padding:8px 12px'>Status</th>
                                                 <th style='padding:8px 12px'>Reaktion am</th>
                                                 <th style='padding:8px 12px'>IP-Adresse</th>
