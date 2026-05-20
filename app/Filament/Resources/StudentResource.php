@@ -99,7 +99,13 @@ class StudentResource extends Resource
                                         'pending' => '<span style="color:#F59E0B;font-weight:600">Ausstehend</span>',
                                         default => '—',
                                     };
-                                    $sent = $r->initial_sent_at?->format('d.m.Y H:i') ?? '—';
+                                    if ($r->initial_sent_at) {
+                                        $sent = $r->initial_sent_at->format('d.m.Y H:i');
+                                    } elseif ($r->email_1_sent || $r->email_2_sent) {
+                                        $sent = '<span style="color:#6b7280" title="Mail wurde versendet, der Zeitpunkt wurde aufgrund eines früheren Versand-Fehlers nicht gespeichert.">versendet (Zeitpunkt nicht erfasst)</span>';
+                                    } else {
+                                        $sent = '—';
+                                    }
                                     $date = $r->responded_at?->format('d.m.Y H:i') ?? '—';
                                     $ip = $r->ip_address ?? '—';
                                     $campaign = e($r->campaign->name ?? '—');

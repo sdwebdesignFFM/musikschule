@@ -125,7 +125,26 @@ class ViewCampaignStatistics extends Page implements HasTable
                     ->sortable(),
                 Tables\Columns\TextColumn::make('initial_sent_at')
                     ->label('Gesendet am')
-                    ->dateTime('d.m.Y H:i')
+                    ->formatStateUsing(fn ($state) => $state?->format('d.m.Y H:i'))
+                    ->getStateUsing(function (CampaignRecipient $record): ?string {
+                        if ($record->initial_sent_at) {
+                            return $record->initial_sent_at->format('d.m.Y H:i');
+                        }
+                        if ($record->email_1_sent || $record->email_2_sent) {
+                            return 'versendet (Zeitpunkt nicht erfasst)';
+                        }
+                        return null;
+                    })
+                    ->tooltip(fn (CampaignRecipient $record): ?string =>
+                        (! $record->initial_sent_at && ($record->email_1_sent || $record->email_2_sent))
+                            ? 'Mail wurde versendet, der Zeitpunkt wurde aufgrund eines früheren Versand-Fehlers nicht gespeichert.'
+                            : null
+                    )
+                    ->color(fn (CampaignRecipient $record): ?string =>
+                        (! $record->initial_sent_at && ($record->email_1_sent || $record->email_2_sent))
+                            ? 'gray'
+                            : null
+                    )
                     ->sortable()
                     ->placeholder('–'),
                 Tables\Columns\TextColumn::make('status')
